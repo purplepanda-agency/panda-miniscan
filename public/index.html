@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Structa — JSON-LD & llms.txt</title>
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem('structa-theme');
+          if (theme === 'light' || theme === 'dark') {
+            document.documentElement.setAttribute('data-theme', theme);
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -13,7 +23,33 @@
           <span class="brand-mark" aria-hidden="true"></span>
           <strong>Structa</strong>
         </a>
-        <span class="topnav-note">JSON-LD &amp; llms.txt checker</span>
+        <div class="topnav-actions">
+          <button
+            type="button"
+            class="theme-toggle"
+            id="themeToggle"
+            aria-label="Switch to light mode"
+            title="Switch theme"
+          >
+            <svg class="theme-toggle-icon theme-toggle-icon--sun" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2" />
+              <path
+                d="M12 2v2.5M12 19.5V22M4.22 4.22l1.77 1.77M18.01 18.01l1.77 1.77M2 12h2.5M19.5 12H22M4.22 19.78l1.77-1.77M18.01 5.99l1.77-1.77"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+            </svg>
+            <svg class="theme-toggle-icon theme-toggle-icon--moon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5 7 7 0 1 0 20.5 14.5Z"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -72,6 +108,6 @@
       </section>
     </main>
 
-    <script src="/app.js?v=59" type="module"></script>
+    <script src="/app.js?v=60" type="module"></script>
   </body>
 </html>

@@ -6,6 +6,43 @@ const submitBtn = document.getElementById('submit');
 const urlInput = /** @type {HTMLInputElement} */ (document.getElementById('url'));
 const landingEl = document.getElementById('landing');
 const workspaceEl = document.getElementById('workspace');
+const themeToggle = /** @type {HTMLButtonElement|null} */ (document.getElementById('themeToggle'));
+
+const THEME_STORAGE_KEY = 'structa-theme';
+
+/**
+ * @returns {'light'|'dark'}
+ */
+function getTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
+
+/**
+ * @param {'light'|'dark'} theme
+ */
+function applyTheme(theme) {
+  const next = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, next);
+  } catch {
+    /* ignore quota / private mode */
+  }
+  if (themeToggle) {
+    const toLight = next === 'dark';
+    themeToggle.setAttribute('aria-label', toLight ? 'Switch to light mode' : 'Switch to dark mode');
+    themeToggle.title = toLight ? 'Light mode' : 'Dark mode';
+  }
+}
+
+function initThemeToggle() {
+  applyTheme(getTheme());
+  themeToggle?.addEventListener('click', () => {
+    applyTheme(getTheme() === 'light' ? 'dark' : 'light');
+  });
+}
+
+initThemeToggle();
 /**
  * @param {string} text
  */

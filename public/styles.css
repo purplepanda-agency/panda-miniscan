@@ -8,6 +8,7 @@
   --muted: #9aa3b5;
   --border: #2d3342;
   --nav: #08090c;
+  --nav-ink: #ffffff;
   --accent: #ff5a1f;
   --accent-hover: #ff6f3d;
   --link: #7db1ff;
@@ -17,9 +18,43 @@
   --miss: #ff8d84;
   --chip: #2a3140;
   --code-bg: #0d0f14;
+  --code-ink: #e8eef7;
+  --placeholder: #7b8498;
+  --hover-border: #4a5368;
+  --wash: rgba(255, 255, 255, 0.04);
+  --suggestion-bg: rgba(0, 0, 0, 0.18);
+  --skeleton-mid: #2c3344;
   --radius: 10px;
   --font: "DM Sans", "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  --bg: #f3f5f9;
+  --surface: #ffffff;
+  --surface-2: #e9edf4;
+  --ink: #1a1f2c;
+  --muted: #5c6578;
+  --border: #d5dae5;
+  --nav: #ffffff;
+  --nav-ink: #1a1f2c;
+  --accent: #ff5a1f;
+  --accent-hover: #e84d15;
+  --link: #2f6fed;
+  --ok-bg: rgba(31, 143, 95, 0.12);
+  --ok: #1f8f5f;
+  --miss-bg: rgba(194, 61, 61, 0.12);
+  --miss: #c23d3d;
+  --chip: #e8ecf3;
+  --code-bg: #f0f2f7;
+  --code-ink: #1a1f2c;
+  --placeholder: #8a93a6;
+  --hover-border: #b0b8c9;
+  --wash: rgba(26, 31, 44, 0.04);
+  --suggestion-bg: rgba(26, 31, 44, 0.05);
+  --skeleton-mid: #d8dee9;
+  color-scheme: light;
 }
 
 * {
@@ -32,16 +67,20 @@ body {
   font-family: var(--font);
   color: var(--ink);
   background: var(--bg);
-  color-scheme: dark;
 }
 
 .search-bar input[type="url"]::placeholder {
-  color: #7b8498;
+  color: var(--placeholder);
 }
 
 .topnav {
   background: var(--nav);
-  color: #fff;
+  color: var(--nav-ink);
+  border-bottom: 1px solid transparent;
+}
+
+html[data-theme="light"] .topnav {
+  border-bottom-color: var(--border);
 }
 
 .topnav-inner {
@@ -68,7 +107,7 @@ body {
 }
 
 .brand:hover {
-  color: #fff;
+  color: var(--nav-ink);
 }
 
 .workspace .status {
@@ -123,7 +162,7 @@ body {
 }
 
 .generate-btn:hover {
-  border-color: #4a5368;
+  border-color: var(--hover-border);
   background: var(--surface-2);
 }
 
@@ -139,9 +178,46 @@ body {
   background: var(--accent);
 }
 
-.topnav-note {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.85rem;
+.topnav-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.theme-toggle {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--nav-ink);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--wash);
+  border-color: var(--hover-border);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.theme-toggle-icon {
+  display: none;
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+html:not([data-theme="light"]) .theme-toggle-icon--sun,
+html[data-theme="light"] .theme-toggle-icon--moon {
+  display: block;
 }
 
 .shell {
@@ -210,6 +286,10 @@ body {
   color: var(--ink);
   max-width: 11.5rem;
   cursor: pointer;
+}
+
+html[data-theme="light"] .audience-field select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%235c6578' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
 }
 
 .audience-field select:focus {
@@ -285,7 +365,7 @@ body {
   text-align: center;
   border-style: dashed;
   border-width: 1.5px;
-  border-color: #4a5368;
+  border-color: var(--hover-border);
   background: transparent;
   padding: 1.75rem 1.25rem;
   transition: border-color 0.15s ease, background 0.15s ease;
@@ -410,10 +490,6 @@ body {
 @media (max-width: 760px) {
   .card-grid {
     grid-template-columns: 1fr;
-  }
-
-  .topnav-note {
-    display: none;
   }
 
   .audience-field select {
@@ -881,7 +957,7 @@ ul.compact.issues li {
 
 .qs-filter:hover {
   color: var(--ink);
-  border-color: #4a5368;
+  border-color: var(--hover-border);
 }
 
 .qs-filter.is-active {
@@ -974,7 +1050,7 @@ details.qs-item[open] > .qs-item-summary .qs-item-chevron {
   padding: 0.75rem 0.85rem;
   border-radius: 8px;
   border: 1px solid rgba(255, 141, 132, 0.35);
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--suggestion-bg);
 }
 
 .qs-item--improvement .qs-item-suggestion {
@@ -1128,7 +1204,7 @@ details.qs-item[open] > .qs-item-summary .qs-item-chevron {
 .regen-audience:focus,
 .view-audience:focus {
   outline: none;
-  border-color: #4a5368;
+  border-color: var(--hover-border);
 }
 
 .page summary .check-again-btn {
@@ -1248,7 +1324,7 @@ label.ghost {
 
 button.ghost:hover,
 label.ghost:hover {
-  border-color: #4a5368;
+  border-color: var(--hover-border);
   background: var(--surface-2);
 }
 
@@ -1259,7 +1335,7 @@ pre {
   max-width: 100%;
   border-radius: 8px;
   background: var(--code-bg);
-  color: #e8eef7;
+  color: var(--code-ink);
   border: 1px solid var(--border);
   font-family: var(--mono);
   font-size: 0.75rem;
@@ -1291,7 +1367,7 @@ pre {
   background: linear-gradient(
     90deg,
     var(--surface-2) 0%,
-    #2c3344 45%,
+    var(--skeleton-mid) 45%,
     var(--surface-2) 100%
   );
   background-size: 200% 100%;
@@ -1429,7 +1505,7 @@ pre {
   height: 2rem;
   flex: 0 0 auto;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash);
   color: var(--ink);
 }
 
@@ -1905,7 +1981,7 @@ pre {
 
 .notes-tool:hover {
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash);
 }
 
 .notes-tool.is-active {
