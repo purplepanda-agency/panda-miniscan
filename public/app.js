@@ -2583,11 +2583,11 @@ async function generateAiInsightsItem(btn) {
       aiInsights,
     };
     refreshAiInsightsUi();
-    setStatus(
-      aiInsights.ok
-        ? `AI insights generated (${aiInsights.cards.length} cards).`
-        : `AI insights: ${aiInsights.error || 'no findings'}`,
-    );
+    if (aiInsights.ok) {
+      setStatus('', false);
+    } else {
+      setStatus(`AI insights: ${aiInsights.error || 'no findings'}`);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setStatus(`Error: ${message}`);
