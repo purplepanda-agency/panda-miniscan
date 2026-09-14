@@ -8,16 +8,23 @@ import { loadPrompt } from './prompts/load.js';
 
 /** @type {Record<string, string>} */
 export const AI_INSIGHT_CATEGORIES = {
-  online_visibility: 'Online vindbaarheid',
-  content_clarity: 'Content & conversie',
-  technical: 'Technisch',
-  quick_wins: 'Quick wins',
+  visibility: 'Vindbaarheid',
+  presence_trust: 'Aanwezigheid en vertrouwen',
+  conversion: 'Conversie, online en naar de winkel',
+  // legacy reports
+  online_visibility: 'Vindbaarheid',
+  content_clarity: 'Conversie, online en naar de winkel',
+  technical: 'Aanwezigheid en vertrouwen',
+  quick_wins: 'Vindbaarheid',
 };
+
+/** @type {('visibility'|'presence_trust'|'conversion')[]} */
+export const AI_INSIGHT_BLOCK_ORDER = ['visibility', 'presence_trust', 'conversion'];
 
 /**
  * @typedef {object} AiInsightCard
  * @property {string} id
- * @property {'online_visibility'|'content_clarity'|'technical'|'quick_wins'} category
+ * @property {string} category
  * @property {string} categoryLabel
  * @property {string} finding
  * @property {string} explanation
@@ -38,6 +45,19 @@ export const AI_INSIGHT_CATEGORIES = {
  */
 export function isGeminiConfigured() {
   return Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+}
+
+/**
+ * @param {string} category
+ * @returns {'visibility'|'presence_trust'|'conversion'|null}
+ */
+export function insightBlockKey(category) {
+  const raw = String(category || '').trim();
+  if (raw === 'visibility' || raw === 'presence_trust' || raw === 'conversion') return raw;
+  if (raw === 'online_visibility' || raw === 'quick_wins') return 'visibility';
+  if (raw === 'content_clarity') return 'conversion';
+  if (raw === 'technical') return 'presence_trust';
+  return null;
 }
 
 /**
@@ -149,7 +169,7 @@ function buildContext(input) {
         return p.url;
       }
     })();
-    if (/about|over-ons|over ons|diensten|services|product|shop|contact|prijs|pricing|case|referentie|faq|blog|nieuws/i.test(`${path} ${title}`)) {
+    if (/about|over-ons|over ons|diensten|services|product|shop|contact|prijs|pricing|merk|brand|locatie|vestiging|case|referentie|faq|blog|nieuws|review|afspraak|winkel/i.test(`${path} ${title}`)) {
       navHints.push(`${path} — ${title}`);
     }
   }
@@ -164,7 +184,7 @@ function buildContext(input) {
   const orgHints = [];
   for (const p of pages.slice(0, 10)) {
     for (const block of p.jsonLd || []) {
-      if (/Organization|LocalBusiness|Corporation|WebSite|Product|Service|Offer|BreadcrumbList|FAQPage/i.test(block)) {
+      if (/Organization|LocalBusiness|Corporation|WebSite|Product|Service|Offer|BreadcrumbList|FAQPage|AggregateRating|Review/i.test(block)) {
         orgHints.push(String(block).slice(0, 1000));
       }
     }
@@ -173,19 +193,25 @@ function buildContext(input) {
   const general = input.general;
   const generalLines = [];
   if (general?.ok) {
-    for (const item of general.companyInfo || []) {
-      generalLines.push(`- ${item.business || item.tech || ''}`);
-    }
-    for (const item of general.mainServices || []) {
-      generalLines.push(`- dienst: ${item.business || item.tech || ''}`);
-    }
+    const pushField = (label, value) => {
+      const text = value != null ? String(value).trim() : '';
+      if (text) generalLines.push(`- ${label}: ${text}`);
+    };
+    pushField('bedrijfsnaam/website', general.companyNameWebsite);
+    pushField('kernaanbod', general.coreOffering);
+    pushField('prijs/merken', general.pricingBrands);
+    pushField('locaties', general.locations);
+    pushField('zoektermen', general.searchTerms);
+    pushField('concurrenten (intake)', general.competitors);
+    pushField('ruwe data', general.rawData);
   }
 
   const channels = input.channels;
   const channelLines = [];
   if (channels?.ok && Array.isArray(channels.channels)) {
-    for (const ch of channels.channels.slice(0, 12)) {
-      channelLines.push(`- ${ch.label || ch.platform || 'channel'}: ${ch.url || ''}`);
+    for (const ch of channels.channels.slice(0, 16)) {
+      const extra = ch.note || ch.snippet ? ` (${[ch.note, ch.snippet].filter(Boolean).join(' · ')})` : '';
+      channelLines.push(`- ${ch.label || ch.platform || 'channel'}: ${ch.url || ''}${extra}`);
     }
   }
 
@@ -207,7 +233,7 @@ function buildContext(input) {
     orgHints.length
       ? `JSON-LD excerpts:\n${orgHints.slice(0, 4).join('\n---\n')}`
       : '',
-    generalLines.length ? `General overview (from earlier analysis):\n${generalLines.join('\n')}` : '',
+    generalLines.length ? `General intake (from earlier analysis):\n${generalLines.join('\n')}` : '',
     channelLines.length ? `Detected channels:\n${channelLines.join('\n')}` : '',
     `Homepage text excerpt:\n${excerpt || '(unavailable)'}`,
   ]
@@ -223,21 +249,29 @@ function toCard(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const obj = /** @type {Record<string, unknown>} */ (value);
 
-  const rawCategory = String(obj.category || '').trim();
-  const category =
-    rawCategory === 'online_visibility' ||
-    rawCategory === 'content_clarity' ||
-    rawCategory === 'technical' ||
-    rawCategory === 'quick_wins'
-      ? rawCategory
-      : null;
-  if (!category) return null;
+  const rawCategory = String(obj.category || obj.block || obj.blok || '').trim();
+  const block = insightBlockKey(rawCategory);
+  if (!block) return null;
 
-  const finding = String(obj.finding || obj.constatatie || obj.title || '').trim();
-  const explanation = String(obj.explanation || obj.uitleg || obj.detail || '').trim();
-  const suggestions = String(
-    obj.suggestions || obj.suggesties || obj.oplossingen || obj.recommendations || '',
-  ).trim();
+  let finding = String(obj.point || obj.lead || obj.heading || obj.finding || obj.constatatie || obj.title || '').trim();
+  let explanation = String(obj.explanation || obj.uitleg || obj.detail || '').trim();
+  if (!finding && !explanation) {
+    finding = String(obj.text || '').trim();
+  }
+
+  if (finding && explanation && finding === explanation) explanation = '';
+
+  if (!explanation && finding) {
+    const split = splitInsightLeadAndText(finding);
+    finding = split.lead;
+    explanation = split.text;
+  }
+
+  if (!finding && explanation) {
+    const split = splitInsightLeadAndText(explanation);
+    finding = split.lead;
+    explanation = split.text;
+  }
 
   if (!finding && !explanation) return null;
 
@@ -245,13 +279,33 @@ function toCard(value) {
     id:
       typeof obj.id === 'string' && obj.id
         ? obj.id
-        : `insight-${category}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    category,
-    categoryLabel: AI_INSIGHT_CATEGORIES[category] || category,
-    finding: finding || explanation.slice(0, 120),
-    explanation: explanation || finding,
-    suggestions,
+        : `insight-${block}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    category: block,
+    categoryLabel: AI_INSIGHT_CATEGORIES[block] || block,
+    finding,
+    explanation,
+    suggestions: '',
   };
+}
+
+/**
+ * @param {string} combined
+ * @returns {{ lead: string, text: string }}
+ */
+function splitInsightLeadAndText(combined) {
+  const raw = String(combined || '').trim();
+  if (!raw) return { lead: '', text: '' };
+  const sentence = raw.match(/^(.+?[.!?])(\s+(.+))$/s);
+  if (sentence && sentence[1].length <= 120) {
+    return { lead: sentence[1].trim(), text: (sentence[3] || '').trim() };
+  }
+  if (raw.length > 100) {
+    const space = raw.indexOf(' ', 65);
+    if (space > 20) {
+      return { lead: `${raw.slice(0, space).trim()}…`, text: raw };
+    }
+  }
+  return { lead: raw, text: '' };
 }
 
 /**
@@ -263,14 +317,19 @@ function toCardList(value) {
   /** @type {AiInsightCard[]} */
   const out = [];
   const seen = new Set();
+  /** @type {Record<string, number>} */
+  const perBlock = {};
   for (const item of value) {
     const card = toCard(item);
     if (!card) continue;
-    const key = `${card.category}::${card.finding.slice(0, 80)}`;
+    const block = card.category;
+    perBlock[block] = (perBlock[block] || 0) + 1;
+    if (perBlock[block] > 3) continue;
+    const key = `${block}::${card.finding.slice(0, 80)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(card);
-    if (out.length >= 12) break;
+    if (out.length >= 9) break;
   }
   return out;
 }

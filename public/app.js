@@ -22,7 +22,11 @@ let lastReport = null;
 /** @type {import('@tiptap/core').Editor|null} */
 let notesEditor = null;
 
+/** @type {string|null} */
+let editingSavedNoteId = null;
+
 function destroyNotesEditor() {
+  editingSavedNoteId = null;
   if (notesEditor) {
     notesEditor.destroy();
     notesEditor = null;
@@ -261,6 +265,50 @@ function textForRole(dual, role) {
   return role === 'tech' ? dual.tech || dual.business : dual.business || dual.tech;
 }
 
+/** @type {{ key: string, label: string, fullWidth?: boolean }[]} */
+const GENERAL_FIELD_DEFS = [
+  { key: 'companyNameWebsite', label: 'Bedrijfsnaam en website' },
+  { key: 'coreOffering', label: 'Kernaanbod, in mijn woorden' },
+  {
+    key: 'pricingBrands',
+    label: 'Prijspositionering (budget, premium, luxe) en belangrijkste merken',
+  },
+  { key: 'locations', label: 'Fysieke locatie(s) en verzorgingsgebied' },
+  {
+    key: 'searchTerms',
+    label: 'Kernzoektermen waar hun klanten op zoeken (categorie, merk, lokaal)',
+  },
+  { key: 'competitors', label: 'Concurrenten om mee te vergelijken (lokaal en online)' },
+  { key: 'rawData', label: 'Ruwe data die ik zelf verzamelde', fullWidth: true },
+];
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeGeneralFieldText(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === 'string') return item.trim();
+        if (item && typeof item === 'object') {
+          const obj = /** @type {Record<string, unknown>} */ (item);
+          return String(obj.business || obj.tech || obj.text || '').trim();
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (typeof value === 'object') {
+    const obj = /** @type {Record<string, unknown>} */ (value);
+    return String(obj.business || obj.tech || obj.text || '').trim();
+  }
+  return String(value);
+}
+
 /**
  * @param {unknown} value
  * @returns {object|null}
@@ -268,14 +316,44 @@ function textForRole(dual, role) {
 function normalizeGeneralSection(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const g = /** @type {Record<string, unknown>} */ (value);
+  /** @type {Record<string, string>} */
+  const fields = {};
+  for (const { key } of GENERAL_FIELD_DEFS) {
+    fields[key] = normalizeGeneralFieldText(g[key]);
+  }
+
+  // Soft-migrate older dual-list general payloads into the new intake fields.
+  if (!fields.companyNameWebsite && Array.isArray(g.companyInfo)) {
+    fields.companyNameWebsite = normalizeGeneralFieldText(g.companyInfo);
+  }
+  if (!fields.coreOffering && Array.isArray(g.mainServices)) {
+    fields.coreOffering = normalizeGeneralFieldText(g.mainServices);
+  }
+  if (!fields.searchTerms && Array.isArray(g.onlinePresence)) {
+    fields.searchTerms = normalizeGeneralFieldText(g.onlinePresence);
+  }
+
   return {
     ok: g.ok !== false,
-    companyInfo: normalizeDualList(g.companyInfo, 3),
-    mainServices: normalizeDualList(g.mainServices, 12),
-    onlinePresence: normalizeDualList(g.onlinePresence, 4),
+    ...fields,
     error: g.error != null ? String(g.error) : null,
     model: g.model != null ? String(g.model) : undefined,
   };
+}
+
+/**
+ * Persist editable General field values from the DOM into lastReport.
+ */
+function persistGeneralFieldsFromDom() {
+  if (!lastReport?.general || lastReport.general.ok === false) return;
+  const fields = { ...lastReport.general };
+  resultsEl.querySelectorAll('textarea[data-general-field]').forEach((node) => {
+    const el = /** @type {HTMLTextAreaElement} */ (node);
+    const key = el.getAttribute('data-general-field');
+    if (!key) return;
+    fields[key] = el.value;
+  });
+  lastReport.general = fields;
 }
 
 /**
@@ -286,7 +364,7 @@ function buildReportPayload(report) {
   const insights = normalizeInsights(report.insights);
   return {
     format: 'structa-report',
-    version: 7,
+    version: 8,
     startUrl: report.startUrl || '',
     analyzedAt: report.analyzedAt || new Date().toISOString(),
     audience: report.audience === 'tech' ? 'tech' : report.audience === 'business' ? 'business' : null,
@@ -305,13 +383,16 @@ function buildReportPayload(report) {
  * @typedef {{ id: string, html: string, savedAt: string }} SavedNote
  * @typedef {{ id: string, category: string, categoryLabel: string, finding: string, explanation: string, suggestions: string }} AiInsightCard
  * @typedef {{ ok: boolean, cards: AiInsightCard[], generatedAt: string|null, error?: string|null, model?: string }} AiInsightsData
+ * @typedef {{ lead: string, text: string }} VerslagLine
+ * @typedef {{ key: string, title: string, items: VerslagLine[] }} VerslagBlock
+ * @typedef {{ ok: boolean, intro: string, blocks: VerslagBlock[], quickWins: VerslagLine[], ownFindings: VerslagLine[], generatedAt: string|null, error?: string|null, model?: string }} ClientVerslagData
  *
  * @param {unknown} value
- * @returns {{ notesHtml: string, savedNotes: SavedNote[], aiInsights: AiInsightsData }}
+ * @returns {{ notesHtml: string, savedNotes: SavedNote[], aiInsights: AiInsightsData, clientVerslag: ClientVerslagData }}
  */
 function normalizeInsights(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { notesHtml: '', savedNotes: [], aiInsights: normalizeAiInsights(null) };
+    return { notesHtml: '', savedNotes: [], aiInsights: normalizeAiInsights(null), clientVerslag: normalizeClientVerslag(null) };
   }
   const obj = /** @type {Record<string, unknown>} */ (value);
   const savedNotes = Array.isArray(obj.savedNotes)
@@ -321,16 +402,141 @@ function normalizeInsights(value) {
     notesHtml: typeof obj.notesHtml === 'string' ? obj.notesHtml : '',
     savedNotes,
     aiInsights: normalizeAiInsights(obj.aiInsights),
+    clientVerslag: normalizeClientVerslag(obj.clientVerslag),
   };
+}
+
+/**
+ * @param {string} combined
+ * @returns {{ lead: string, text: string }}
+ */
+function splitInsightLeadAndText(combined) {
+  const raw = String(combined || '').trim();
+  if (!raw) return { lead: '', text: '' };
+  const sentence = raw.match(/^(.+?[.!?])(\s+(.+))$/s);
+  if (sentence && sentence[1].length <= 120) {
+    return { lead: sentence[1].trim(), text: (sentence[3] || '').trim() };
+  }
+  if (raw.length > 100) {
+    const space = raw.indexOf(' ', 65);
+    if (space > 20) {
+      return { lead: `${raw.slice(0, space).trim()}…`, text: raw };
+    }
+  }
+  return { lead: raw, text: '' };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {ClientVerslagData}
+ */
+function normalizeClientVerslag(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ok: false, intro: '', blocks: [], quickWins: [], ownFindings: [], generatedAt: null, error: null };
+  }
+  const obj = /** @type {Record<string, unknown>} */ (value);
+  const blocks = Array.isArray(obj.blocks)
+    ? obj.blocks
+        .map((b) => {
+          if (!b || typeof b !== 'object') return null;
+          const block = /** @type {Record<string, unknown>} */ (b);
+          const key = insightBlockKey(String(block.key || block.category || ''));
+          if (!key) return null;
+          const items = normalizeVerslagLines(block.items).slice(0, 3);
+          if (!items.length) return null;
+          return {
+            key,
+            title: String(block.title || AI_INSIGHT_CATEGORY_LABELS[key] || key),
+            items,
+          };
+        })
+        .filter(Boolean)
+    : [];
+  const quickWins = normalizeVerslagLines(obj.quickWins).slice(0, 5);
+  let ownFindings = [];
+  if (Array.isArray(obj.ownFindings)) {
+    ownFindings = normalizeVerslagLines(obj.ownFindings).slice(0, 5);
+  } else if (obj.ownFindings && typeof obj.ownFindings === 'object') {
+    const of = /** @type {Record<string, unknown>} */ (obj.ownFindings);
+    ownFindings = normalizeVerslagLines(of.items).slice(0, 5);
+  } else if (Array.isArray(obj.notesParagraphs)) {
+    ownFindings = obj.notesParagraphs
+      .map((p) => {
+        const para = String(p).trim();
+        if (!para) return null;
+        const m = para.match(/^(.+?[.!?])(\s+([\s\S]+))?$/);
+        if (m && m[1].length <= 100) {
+          return { lead: m[1].trim(), text: (m[3] || '').trim() };
+        }
+        return { lead: para, text: '' };
+      })
+      .filter(Boolean);
+  }
+  const intro = String(obj.intro || '').trim();
+  const ok =
+    obj.ok !== false && Boolean(intro || blocks.length || quickWins.length || ownFindings.length);
+  return {
+    ok,
+    intro,
+    blocks: /** @type {VerslagBlock[]} */ (blocks),
+    quickWins,
+    ownFindings,
+    generatedAt: typeof obj.generatedAt === 'string' ? obj.generatedAt : null,
+    error: obj.error != null ? String(obj.error) : null,
+    model: obj.model != null ? String(obj.model) : undefined,
+  };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {VerslagLine[]}
+ */
+function normalizeVerslagLines(value) {
+  if (!Array.isArray(value)) return [];
+  /** @type {VerslagLine[]} */
+  const out = [];
+  for (const raw of value) {
+    if (typeof raw === 'string') {
+      const text = raw.trim();
+      if (text) out.push({ lead: text, text: '' });
+      continue;
+    }
+    if (!raw || typeof raw !== 'object') continue;
+    const obj = /** @type {Record<string, unknown>} */ (raw);
+    const lead = String(obj.lead || obj.point || obj.finding || obj.title || '').trim();
+    const text = String(obj.text || obj.detail || obj.explanation || '').trim();
+    if (!lead && !text) continue;
+    out.push({ lead: lead || text.slice(0, 60), text: lead && text ? text : '' });
+  }
+  return out;
 }
 
 /** @type {Record<string, string>} */
 const AI_INSIGHT_CATEGORY_LABELS = {
-  online_visibility: 'Online vindbaarheid',
-  content_clarity: 'Content & conversie',
-  technical: 'Technisch',
-  quick_wins: 'Quick wins',
+  visibility: 'Vindbaarheid',
+  presence_trust: 'Aanwezigheid en vertrouwen',
+  conversion: 'Conversie, online en naar de winkel',
+  online_visibility: 'Vindbaarheid',
+  content_clarity: 'Conversie, online en naar de winkel',
+  technical: 'Aanwezigheid en vertrouwen',
+  quick_wins: 'Vindbaarheid',
 };
+
+/** @type {('visibility'|'presence_trust'|'conversion')[]} */
+const AI_INSIGHT_BLOCK_ORDER = ['visibility', 'presence_trust', 'conversion'];
+
+/**
+ * @param {string} category
+ * @returns {'visibility'|'presence_trust'|'conversion'|null}
+ */
+function insightBlockKey(category) {
+  const raw = String(category || '').trim();
+  if (raw === 'visibility' || raw === 'presence_trust' || raw === 'conversion') return raw;
+  if (raw === 'online_visibility' || raw === 'quick_wins') return 'visibility';
+  if (raw === 'content_clarity') return 'conversion';
+  if (raw === 'technical') return 'presence_trust';
+  return null;
+}
 
 /**
  * @param {unknown} value
@@ -358,19 +564,29 @@ function normalizeAiInsights(value) {
 function normalizeAiInsightCard(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const obj = /** @type {Record<string, unknown>} */ (value);
-  const category = String(obj.category || '').trim();
-  if (!AI_INSIGHT_CATEGORY_LABELS[category]) return null;
-  const finding = String(obj.finding || '').trim();
-  const explanation = String(obj.explanation || '').trim();
-  const suggestions = String(obj.suggestions || '').trim();
+  const block = insightBlockKey(String(obj.category || '').trim());
+  if (!block) return null;
+  let finding = String(obj.point || obj.lead || obj.heading || obj.finding || obj.title || '').trim();
+  let explanation = String(obj.explanation || obj.uitleg || obj.detail || '').trim();
+  if (finding && explanation && finding === explanation) explanation = '';
+  if (!explanation && finding) {
+    const split = splitInsightLeadAndText(finding);
+    finding = split.lead;
+    explanation = split.text;
+  }
+  if (!finding && explanation) {
+    const split = splitInsightLeadAndText(explanation);
+    finding = split.lead;
+    explanation = split.text;
+  }
   if (!finding && !explanation) return null;
   return {
-    id: typeof obj.id === 'string' && obj.id ? obj.id : `insight-${category}-${Date.now()}`,
-    category,
-    categoryLabel: AI_INSIGHT_CATEGORY_LABELS[category] || category,
-    finding: finding || explanation.slice(0, 120),
-    explanation: explanation || finding,
-    suggestions,
+    id: typeof obj.id === 'string' && obj.id ? obj.id : `insight-${block}-${Date.now()}`,
+    category: block,
+    categoryLabel: AI_INSIGHT_CATEGORY_LABELS[block] || block,
+    finding,
+    explanation,
+    suggestions: '',
   };
 }
 
@@ -382,31 +598,105 @@ function renderAiInsightsList(aiInsights) {
     return `<div class="issues-box"><strong>Generation failed</strong><p class="muted" style="margin:0.4rem 0 0;color:inherit;">${escapeHtml(aiInsights.error)}</p></div>`;
   }
   if (!aiInsights.cards.length) {
-    return '<p class="muted ai-insights-empty">Click Generate to run an AI research pass on this site.</p>';
+    return '<p class="muted ai-insights-empty">Klik op Generate voor een eerste analyse.</p>';
   }
-  return aiInsights.cards.map(renderAiInsightCard).join('');
+
+  /** @type {Record<string, AiInsightCard[]>} */
+  const grouped = { visibility: [], presence_trust: [], conversion: [] };
+  for (const card of aiInsights.cards) {
+    const key = insightBlockKey(card.category);
+    if (key && grouped[key]) grouped[key].push(card);
+  }
+
+  return `<div class="ai-insights-blocks">${AI_INSIGHT_BLOCK_ORDER.map((blockKey) =>
+    renderAiInsightBlock(blockKey, grouped[blockKey] || []),
+  ).join('')}</div>`;
+}
+
+/**
+ * @param {'visibility'|'presence_trust'|'conversion'} blockKey
+ * @param {AiInsightCard[]} cards
+ */
+function renderAiInsightBlock(blockKey, cards) {
+  const label = AI_INSIGHT_CATEGORY_LABELS[blockKey] || blockKey;
+  const items = cards.slice(0, 3);
+  const body =
+    items.length > 0
+      ? `<ul class="insight-block-findings">${items.map((c) => renderAiInsightFinding(c)).join('')}</ul>`
+      : `<p class="muted insight-block-empty">Geen onderbouwde bevindingen uit deze snapshot voor dit blok.</p>`;
+  return `<section class="insight-block insight-block--${escapeHtml(blockKey)}" aria-labelledby="insight-block-${escapeHtml(blockKey)}">
+      <div class="insight-block-header">
+        <h4 class="insight-block-title" id="insight-block-${escapeHtml(blockKey)}">${escapeHtml(label)}</h4>
+      </div>
+      <div class="insight-block-body">${body}</div>
+    </section>`;
 }
 
 /**
  * @param {AiInsightCard} card
  */
-function renderAiInsightCard(card) {
-  const suggestions = card.suggestions
-    ? `<div class="insight-card-section">
-        <strong>Suggesties</strong>
-        <p>${escapeHtml(card.suggestions).replace(/\n/g, '<br>')}</p>
-      </div>`
+function renderAiInsightFinding(card) {
+  const lead = card.finding ? `<span class="insight-finding-point">${escapeHtml(card.finding)}</span>` : '';
+  const detail = card.explanation
+    ? `<span class="insight-finding-explanation">${escapeHtml(card.explanation)}</span>`
     : '';
-  return `
-    <article class="insight-card insight-card--${escapeHtml(card.category)}" data-insight-id="${escapeHtml(card.id)}">
-      <span class="insight-card-category">${escapeHtml(card.categoryLabel)}</span>
-      <h4 class="insight-card-finding">${escapeHtml(card.finding)}</h4>
-      <div class="insight-card-section">
-        <strong>Uitleg</strong>
-        <p>${escapeHtml(card.explanation)}</p>
-      </div>
-      ${suggestions}
-    </article>`;
+  return `<li class="insight-finding" data-insight-id="${escapeHtml(card.id)}">${lead}${detail}</li>`;
+}
+
+/**
+ * @param {string} base64
+ * @param {string} filename
+ */
+function downloadPdfBase64(base64, filename) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename || 'verslag.pdf';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
+/**
+ * @param {object} report
+ */
+function verslagPdfDownloadName(report) {
+  const general = report.general;
+  const fromGeneral =
+    general?.companyNameWebsite != null ? String(general.companyNameWebsite).split(/[—–\-|]/)[0].trim() : '';
+  let host = fromGeneral || 'verslag';
+  if (!fromGeneral) {
+    try {
+      const raw = String(report.startUrl || urlInput.value || '');
+      const u = new URL(raw.includes('://') ? raw : `https://${raw}`);
+      host = u.hostname.replace(/^www\./i, '');
+    } catch {
+      /* keep default */
+    }
+  }
+  const safe = host.replace(/[^\w\s-]/g, '').replace(/\s+/g, '-') || 'verslag';
+  return `${safe}-miniscan-${new Date().toISOString().slice(0, 10)}.pdf`;
+}
+
+function syncVerslagPdfMeta() {
+  const meta = resultsEl.querySelector('[data-verslag-pdf-meta]');
+  const redownload = resultsEl.querySelector('#insightsVerslagRedownload');
+  if (!lastReport) return;
+  const { clientVerslag } = normalizeInsights(lastReport.insights);
+  if (meta) {
+    meta.textContent = clientVerslag.generatedAt
+      ? `Laatste PDF: ${formatSavedNoteTime(clientVerslag.generatedAt)}`
+      : '';
+    meta.hidden = !clientVerslag.ok;
+  }
+  if (redownload instanceof HTMLButtonElement) {
+    redownload.hidden = !clientVerslag.ok;
+  }
 }
 
 /**
@@ -462,14 +752,18 @@ function formatSavedNoteTime(iso) {
  */
 function renderSavedNotesList(savedNotes) {
   if (!savedNotes.length) {
-    return '<p class="muted saved-notes-empty">No saved notes yet.</p>';
+    return '<p class="muted saved-notes-empty">Nog geen opgeslagen notities.</p>';
   }
   return savedNotes
     .map(
       (note) => `
-    <article class="saved-note-card" data-note-id="${escapeHtml(note.id)}">
+    <article class="saved-note-card${editingSavedNoteId === note.id ? ' is-editing' : ''}" data-note-id="${escapeHtml(note.id)}">
       <div class="saved-note-meta">
         <time datetime="${escapeHtml(note.savedAt)}">${escapeHtml(formatSavedNoteTime(note.savedAt))}</time>
+        <div class="saved-note-actions">
+          <button type="button" class="saved-note-action" data-note-edit aria-label="Notitie bewerken">Bewerken</button>
+          <button type="button" class="saved-note-action saved-note-action--danger" data-note-delete aria-label="Notitie verwijderen">Verwijderen</button>
+        </div>
       </div>
       <div class="saved-note-content notes-prose">${note.html}</div>
     </article>`
@@ -485,6 +779,96 @@ function refreshSavedNotesUi() {
   if (!list || !lastReport) return;
   const { savedNotes } = normalizeInsights(lastReport.insights);
   list.innerHTML = renderSavedNotesList(savedNotes);
+  bindSavedNotesActions();
+}
+
+function syncNotesSaveButtonLabel() {
+  const saveBtn = resultsEl.querySelector('#notesSaveBtn');
+  if (!(saveBtn instanceof HTMLButtonElement)) return;
+  if (editingSavedNoteId) {
+    saveBtn.textContent = 'Bijwerken';
+    saveBtn.title = 'Wijzigingen in deze notitie opslaan';
+  } else {
+    saveBtn.textContent = 'Opslaan';
+    saveBtn.title = 'Huidige tekst als notitie opslaan';
+  }
+}
+
+/**
+ * @param {string} noteId
+ */
+function startEditSavedNote(noteId) {
+  if (!lastReport || !notesEditor) return;
+  const insights = normalizeInsights(lastReport.insights);
+  const note = insights.savedNotes.find((n) => n.id === noteId);
+  if (!note) return;
+
+  editingSavedNoteId = noteId;
+  notesEditor.commands.setContent(note.html, false);
+  persistNotesHtml(note.html);
+  refreshSavedNotesUi();
+  syncNotesSaveButtonLabel();
+  notesEditor.commands.focus('end');
+
+  const details = resultsEl.querySelector('.insights-notes-details');
+  if (details instanceof HTMLDetailsElement) details.open = true;
+  setStatus('Notitie geladen — pas aan en klik Bijwerken.', false);
+}
+
+/**
+ * @param {string} noteId
+ */
+function deleteSavedNote(noteId) {
+  if (!lastReport) return;
+  const insights = normalizeInsights(lastReport.insights);
+  const note = insights.savedNotes.find((n) => n.id === noteId);
+  if (!note) return;
+
+  if (!window.confirm('Deze opgeslagen notitie verwijderen?')) return;
+
+  lastReport.insights = {
+    ...insights,
+    savedNotes: insights.savedNotes.filter((n) => n.id !== noteId),
+  };
+
+  if (editingSavedNoteId === noteId) {
+    editingSavedNoteId = null;
+    if (notesEditor) {
+      notesEditor.commands.setContent('', false);
+      persistNotesHtml('');
+    }
+    syncNotesSaveButtonLabel();
+  }
+
+  refreshSavedNotesUi();
+  setStatus('Notitie verwijderd.', false);
+}
+
+function bindSavedNotesActions() {
+  const list = resultsEl.querySelector('[data-saved-notes-list]');
+  if (!list) return;
+
+  list.querySelectorAll('[data-note-edit]').forEach((node) => {
+    const btn = /** @type {HTMLButtonElement} */ (node);
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const card = btn.closest('[data-note-id]');
+      const id = card?.getAttribute('data-note-id');
+      if (id) startEditSavedNote(id);
+    });
+  });
+
+  list.querySelectorAll('[data-note-delete]').forEach((node) => {
+    const btn = /** @type {HTMLButtonElement} */ (node);
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const card = btn.closest('[data-note-id]');
+      const id = card?.getAttribute('data-note-id');
+      if (id) deleteSavedNote(id);
+    });
+  });
 }
 
 /**
@@ -497,6 +881,27 @@ function saveCurrentNote() {
 
   persistNotesHtml(html);
   const insights = normalizeInsights(lastReport.insights);
+
+  if (editingSavedNoteId) {
+    const idx = insights.savedNotes.findIndex((n) => n.id === editingSavedNoteId);
+    if (idx === -1) {
+      editingSavedNoteId = null;
+      syncNotesSaveButtonLabel();
+      return false;
+    }
+    const updated = [...insights.savedNotes];
+    updated[idx] = {
+      ...updated[idx],
+      html,
+      savedAt: new Date().toISOString(),
+    };
+    lastReport.insights = { ...insights, savedNotes: updated };
+    editingSavedNoteId = null;
+    syncNotesSaveButtonLabel();
+    refreshSavedNotesUi();
+    return true;
+  }
+
   const note = {
     id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     html,
@@ -562,11 +967,20 @@ async function loadReportFile(file) {
   report.insights = normalizeInsights(data.insights);
   // Keep failed general payloads (ok:false) instead of dropping them
   if (data.general && typeof data.general === 'object' && data.general.ok === false) {
-    report.general = {
+    const failed = normalizeGeneralSection({ ...data.general, ok: false }) || {
       ok: false,
-      companyInfo: [],
-      mainServices: [],
-      onlinePresence: [],
+      companyNameWebsite: '',
+      coreOffering: '',
+      pricingBrands: '',
+      locations: '',
+      searchTerms: '',
+      competitors: '',
+      rawData: '',
+      error: 'General overview unavailable',
+    };
+    report.general = {
+      ...failed,
+      ok: false,
       error: data.general.error != null ? String(data.general.error) : 'General overview unavailable',
       model: data.general.model != null ? String(data.general.model) : undefined,
     };
@@ -1433,11 +1847,9 @@ function renderChannelsPanel(channels) {
 
 /**
  * @param {object|null|undefined} general
- * @param {'business'|'tech'|null|undefined} reportAudience
+ * @param {'business'|'tech'|null|undefined} _reportAudience
  */
-function renderGeneralPanel(general, reportAudience) {
-  const role = reportAudience === 'tech' ? 'tech' : 'business';
-
+function renderGeneralPanel(general, _reportAudience) {
   if (!general) {
     return renderGenerateFrame('general', 'General');
   }
@@ -1446,7 +1858,7 @@ function renderGeneralPanel(general, reportAudience) {
     return `<div class="card">
       <div class="panel-title-row">
         <h3 class="panel-title">General</h3>
-        ${renderViewRoleControls('general', role)}
+        <button type="button" class="ghost check-again-btn" data-recheck="general-regen">Regenerate</button>
       </div>
       <div class="issues-box">
         <strong>Unavailable</strong>
@@ -1456,31 +1868,32 @@ function renderGeneralPanel(general, reportAudience) {
   }
 
   /**
-   * @param {string} title
-   * @param {{ business: string, tech: string }[]} lines
-   * @param {string} empty
+   * @param {{ key: string, label: string, fullWidth?: boolean }} def
    */
-  function renderBlock(title, lines, empty) {
-    const visible = (lines || []).map((line) => textForRole(line, role)).filter(Boolean);
-    const list =
-      visible.length > 0
-        ? `<ul class="compact general-lines">${visible.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`
-        : `<p class="muted">${escapeHtml(empty)}</p>`;
-    return `<div class="card general-block">
-      <h3 class="panel-title">${escapeHtml(title)}</h3>
-      ${list}
+  function renderField(def) {
+    const value = general[def.key] != null ? String(general[def.key]) : '';
+    const rows = Math.min(10, Math.max(3, value.split('\n').length + 1));
+    const spanClass = def.fullWidth ? ' general-field--full' : '';
+    return `<div class="card general-block general-field${spanClass}">
+      <label class="general-field-label" for="general-field-${escapeHtml(def.key)}">${escapeHtml(def.label)}</label>
+      <textarea
+        id="general-field-${escapeHtml(def.key)}"
+        class="general-field-input"
+        data-general-field="${escapeHtml(def.key)}"
+        rows="${rows}"
+        spellcheck="true"
+      >${escapeHtml(value)}</textarea>
     </div>`;
   }
 
-  const roleLabel = role === 'tech' ? 'Tech expert' : 'Business developer';
   return `<div class="stack general-stack">
       <div class="panel-title-row" style="margin:0;">
-        <p class="muted" style="margin:0;">Showing ${escapeHtml(roleLabel)} wording${general.model ? ` · ${escapeHtml(general.model)}` : ''}.</p>
-        ${renderViewRoleControls('general', role)}
+        <p class="muted" style="margin:0;">Vul aan of pas aan — leeg = niet gevonden op de site${general.model ? ` · ${escapeHtml(general.model)}` : ''}.</p>
+        <button type="button" class="ghost check-again-btn" data-recheck="general-regen">Regenerate</button>
       </div>
-      ${renderBlock('Company info', general.companyInfo || [], 'No company info returned.')}
-      ${renderBlock('Main services', general.mainServices || [], 'No main services returned.')}
-      ${renderBlock('Online presence', general.onlinePresence || [], 'No online presence notes returned.')}
+      <div class="card-grid general-grid">
+        ${GENERAL_FIELD_DEFS.map(renderField).join('')}
+      </div>
     </div>`;
 }
 
@@ -1489,6 +1902,7 @@ function renderGeneralPanel(general, reportAudience) {
  * @param {{ fromFile?: boolean, preserveUi?: boolean, statusText?: string }} [opts]
  */
 function showReport(report, opts = {}) {
+  persistGeneralFieldsFromDom();
   const uiState = opts.preserveUi ? captureUiState() : null;
   normalizeReportQuickscan(report);
   if (report.general) report.general = normalizeGeneralSection(report.general) || report.general;
@@ -1523,13 +1937,16 @@ function showReport(report, opts = {}) {
  * @param {object|null|undefined} insights
  */
 function renderInsightsPanel(insights) {
-  const { savedNotes, aiInsights } = normalizeInsights(insights);
+  const { savedNotes, aiInsights, clientVerslag } = normalizeInsights(insights);
   const metaLabel = aiInsights.generatedAt
     ? `Generated ${formatSavedNoteTime(aiInsights.generatedAt)}${aiInsights.model ? ` · ${aiInsights.model}` : ''}`
     : '';
+  const verslagMeta = clientVerslag.ok && clientVerslag.generatedAt
+    ? `Laatste PDF: ${formatSavedNoteTime(clientVerslag.generatedAt)}`
+    : '';
   return `
-    <div class="insights-layout">
-      <section class="card insights-col insights-ai">
+    <div class="insights-page stack">
+      <section class="card insights-ai-main">
         <div class="insights-ai-head">
           <h3 class="panel-title">AI insights</h3>
           <button type="button" class="generate-btn" id="insightsGenerate">Generate</button>
@@ -1537,28 +1954,40 @@ function renderInsightsPanel(insights) {
         <p class="ai-insights-meta muted" data-ai-insights-meta ${metaLabel ? '' : 'hidden'}>${escapeHtml(metaLabel)}</p>
         <div class="ai-insights-list" data-ai-insights-list>${renderAiInsightsList(aiInsights)}</div>
       </section>
-      <section class="card insights-col insights-notes">
-        <div class="insights-notes-head">
-          <h3 class="panel-title">Notes</h3>
-          <div class="notes-toolbar" role="toolbar" aria-label="Notes formatting">
-            <button type="button" class="notes-tool" data-notes-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
-            <button type="button" class="notes-tool" data-notes-cmd="italic" title="Italic" aria-label="Italic"><em>I</em></button>
-            <span class="notes-tool-sep" aria-hidden="true"></span>
-            <button type="button" class="notes-tool" data-notes-cmd="heading" title="Heading" aria-label="Heading">H</button>
-            <button type="button" class="notes-tool" data-notes-cmd="bulletList" title="Bullet list" aria-label="Bullet list">••</button>
-            <button type="button" class="notes-tool" data-notes-cmd="orderedList" title="Numbered list" aria-label="Numbered list">1.</button>
-            <span class="notes-tool-sep" aria-hidden="true"></span>
-            <button type="button" class="notes-save-btn" id="notesSaveBtn" title="Save note">Save note</button>
+      <section class="insights-notes-compact">
+        <details class="insights-notes-details" open>
+          <summary class="insights-notes-summary">
+            <span class="insights-notes-summary-title">Eigen notities</span>
+            <span class="insights-notes-summary-hint">Observaties tijdens het gesprek — niet meegenomen in AI insights</span>
+          </summary>
+          <div class="insights-notes-details-body">
+            <div class="notes-toolbar notes-toolbar--compact" role="toolbar" aria-label="Notes formatting">
+              <button type="button" class="notes-tool" data-notes-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
+              <button type="button" class="notes-tool" data-notes-cmd="italic" title="Italic" aria-label="Italic"><em>I</em></button>
+              <span class="notes-tool-sep" aria-hidden="true"></span>
+              <button type="button" class="notes-tool" data-notes-cmd="heading" title="Heading" aria-label="Heading">H</button>
+              <button type="button" class="notes-tool" data-notes-cmd="bulletList" title="Bullet list" aria-label="Bullet list">••</button>
+              <button type="button" class="notes-tool" data-notes-cmd="orderedList" title="Numbered list" aria-label="Numbered list">1.</button>
+              <span class="notes-tool-sep" aria-hidden="true"></span>
+              <button type="button" class="notes-save-btn" id="notesSaveBtn" title="Save note">Opslaan</button>
+            </div>
+            <div class="notes-editor notes-editor--compact">
+              <div class="notes-editor-mount" data-notes-editor></div>
+            </div>
+            <div class="saved-notes saved-notes--compact">
+              <h4 class="saved-notes-title">Opgeslagen notities</h4>
+              <div class="saved-notes-list" data-saved-notes-list>${renderSavedNotesList(savedNotes)}</div>
+            </div>
           </div>
-        </div>
-        <div class="notes-editor">
-          <div class="notes-editor-mount" data-notes-editor></div>
-        </div>
-        <div class="saved-notes">
-          <h4 class="saved-notes-title">Saved notes</h4>
-          <div class="saved-notes-list" data-saved-notes-list>${renderSavedNotesList(savedNotes)}</div>
-        </div>
+        </details>
       </section>
+      <div class="insights-verslag-footer">
+        <p class="ai-insights-meta muted insights-verslag-meta" data-verslag-pdf-meta ${verslagMeta ? '' : 'hidden'}>${escapeHtml(verslagMeta)}</p>
+        <div class="insights-verslag-actions">
+          <button type="button" class="btn-primary insights-verslag-btn" id="insightsVerslag">Verslag PDF</button>
+          <button type="button" class="ghost" id="insightsVerslagRedownload" ${clientVerslag.ok ? '' : 'hidden'}>PDF opnieuw</button>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -1634,7 +2063,7 @@ async function mountNotesEditor() {
           },
         }),
         Placeholder.configure({
-          placeholder: 'Write notes about this site…',
+          placeholder: 'Eigen observaties, quotes van de klant, afspraken…',
         }),
       ],
       content: initialHtml || '',
@@ -1674,14 +2103,17 @@ async function mountNotesEditor() {
 
     const saveBtn = resultsEl.querySelector('#notesSaveBtn');
     saveBtn?.addEventListener('click', () => {
+      const wasEdit = Boolean(editingSavedNoteId);
       const saved = saveCurrentNote();
       if (!saved) {
-        setStatus('Nothing to save — write a note first.', true);
+        setStatus('Niets om op te slaan — schrijf eerst een notitie.', true);
         return;
       }
-      setStatus('Note saved.', true);
+      setStatus(wasEdit ? 'Notitie bijgewerkt.' : 'Notitie opgeslagen.', false);
     });
 
+    syncNotesSaveButtonLabel();
+    bindSavedNotesActions();
     syncNotesToolbar();
   } catch (err) {
     console.error(err);
@@ -1737,6 +2169,7 @@ function renderReport(report) {
 
   resultsEl.querySelector('#downloadReport')?.addEventListener('click', () => {
     if (notesEditor) persistNotesHtml(notesEditor.getHTML());
+    persistGeneralFieldsFromDom();
     if (lastReport) downloadReport(lastReport);
   });
 
@@ -1806,8 +2239,28 @@ function renderReport(report) {
 
   bindRecheckButtons();
   bindViewAudienceControls();
+  bindGeneralFieldEditors();
   bindInsightsGenerate();
+  bindInsightsVerslag();
+  syncVerslagPdfMeta();
   void mountNotesEditor();
+}
+
+/**
+ * Keep editable General intake fields synced into lastReport.
+ */
+function bindGeneralFieldEditors() {
+  resultsEl.querySelectorAll('textarea[data-general-field]').forEach((node) => {
+    const el = /** @type {HTMLTextAreaElement} */ (node);
+    const sync = () => {
+      if (!lastReport?.general || lastReport.general.ok === false) return;
+      const key = el.getAttribute('data-general-field');
+      if (!key) return;
+      lastReport.general = { ...lastReport.general, [key]: el.value };
+    };
+    el.addEventListener('input', sync);
+    el.addEventListener('change', sync);
+  });
 }
 
 /**
@@ -1819,6 +2272,21 @@ function bindInsightsGenerate() {
   btn.addEventListener('click', () => {
     void generateAiInsightsItem(btn);
   });
+}
+
+function bindInsightsVerslag() {
+  const btn = resultsEl.querySelector('#insightsVerslag');
+  if (btn instanceof HTMLButtonElement) {
+    btn.addEventListener('click', () => {
+      void generateClientVerslagItem(btn);
+    });
+  }
+  const redownload = resultsEl.querySelector('#insightsVerslagRedownload');
+  if (redownload instanceof HTMLButtonElement) {
+    redownload.addEventListener('click', () => {
+      void redownloadClientVerslagPdf(redownload);
+    });
+  }
 }
 
 function bindViewAudienceControls() {
@@ -2094,8 +2562,100 @@ async function generateAiInsightsItem(btn) {
 /**
  * @param {HTMLButtonElement} btn
  */
+async function generateClientVerslagItem(btn) {
+  if (!lastReport) return;
+  const url = lastReport.startUrl || urlInput.value.trim();
+  if (!url) {
+    setStatus('Error: no site URL available for verslag');
+    return;
+  }
+
+  if (notesEditor) persistNotesHtml(notesEditor.getHTML());
+  const insights = normalizeInsights(lastReport.insights);
+
+  setButtonBusy(btn, true, 'Bezig…');
+  setStatus('Verslag wordt samengesteld…');
+  try {
+    const res = await fetch('/api/recheck/client-verslag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        general: lastReport.general ?? null,
+        aiInsights: insights.aiInsights,
+        notesHtml: insights.notesHtml,
+        savedNotes: insights.savedNotes,
+        channels: lastReport.channels ?? null,
+      }),
+    });
+    const data = await readApiJson(res);
+    if (!res.ok) {
+      throw new Error(data.error || data.clientVerslag?.error || `HTTP ${res.status}`);
+    }
+
+    const clientVerslag = normalizeClientVerslag(data.clientVerslag);
+    lastReport.insights = {
+      ...insights,
+      clientVerslag,
+    };
+    if (data.pdfBase64) {
+      downloadPdfBase64(data.pdfBase64, data.filename || verslagPdfDownloadName(lastReport));
+    }
+    syncVerslagPdfMeta();
+    setStatus(clientVerslag.ok ? 'PDF verslag gedownload.' : `Verslag: ${clientVerslag.error || 'mislukt'}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    setStatus(`Error: ${message}`);
+  } finally {
+    setButtonBusy(btn, false);
+  }
+}
+
+/**
+ * @param {HTMLButtonElement} btn
+ */
+async function redownloadClientVerslagPdf(btn) {
+  if (!lastReport) return;
+  const url = lastReport.startUrl || urlInput.value.trim();
+  const insights = normalizeInsights(lastReport.insights);
+  if (!insights.clientVerslag.ok) {
+    setStatus('Nog geen opgeslagen verslag — gebruik Verslag PDF.');
+    return;
+  }
+
+  setButtonBusy(btn, true, 'PDF…');
+  try {
+    const res = await fetch('/api/client-verslag/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        general: lastReport.general ?? null,
+        clientVerslag: insights.clientVerslag,
+      }),
+    });
+    const data = await readApiJson(res);
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (data.pdfBase64) {
+      downloadPdfBase64(data.pdfBase64, data.filename || verslagPdfDownloadName(lastReport));
+    }
+    setStatus('PDF opnieuw gedownload.');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    setStatus(`Error: ${message}`);
+  } finally {
+    setButtonBusy(btn, false);
+  }
+}
+
+/**
+ * @param {HTMLButtonElement} btn
+ */
 async function recheckGeneralItem(btn) {
   if (!lastReport) return;
+  persistGeneralFieldsFromDom();
+  const preservedRawData =
+    lastReport.general?.ok && lastReport.general.rawData != null ? String(lastReport.general.rawData) : '';
   const url = lastReport.startUrl || urlInput.value.trim();
   if (!url) {
     setStatus('Error: no site URL available for general overview');
@@ -2120,7 +2680,11 @@ async function recheckGeneralItem(btn) {
     const data = await readApiJson(res);
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
-    const next = { ...lastReport, general: data.general };
+    let general = data.general;
+    if (general?.ok && preservedRawData.trim()) {
+      general = { ...general, rawData: preservedRawData };
+    }
+    const next = { ...lastReport, general };
     showReport(next, {
       preserveUi: true,
       statusText: data.general?.ok

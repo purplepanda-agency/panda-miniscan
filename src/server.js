@@ -3,7 +3,9 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { loadEnv } from './env.js';
 import { analyzeSite } from './index.js';
-import { recheckPage, recheckLlms, confirmQuickscanItem, recheckGeneral, recheckQuickscan, recheckContentQuickscan, recheckChannels, recheckAiInsights } from './recheck.js';
+import { recheckPage, recheckLlms, confirmQuickscanItem, recheckGeneral, recheckQuickscan, recheckContentQuickscan, recheckChannels, recheckAiInsights, recheckClientVerslag } from './recheck.js';
+import { buildClientVerslagPdf, companyNameForVerslag, verslagPdfFilename } from './client-verslag-pdf.js';
+import { normalizeClientVerslag } from './client-verslag.js';
 
 loadEnv();
 
@@ -308,6 +310,69 @@ app.post('/api/recheck/ai-insights', async (req, res) => {
       channels: req.body?.channels ?? null,
     });
     res.json({ aiInsights });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/recheck/client-verslag', async (req, res) => {
+  const url = req.body?.url;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include string "url"' });
+    return;
+  }
+  try {
+    const general = req.body?.general ?? null;
+    const clientVerslag = await recheckClientVerslag(url, {
+      general,
+      aiInsights: req.body?.aiInsights ?? null,
+      notesHtml: typeof req.body?.notesHtml === 'string' ? req.body.notesHtml : '',
+      savedNotes: Array.isArray(req.body?.savedNotes) ? req.body.savedNotes : [],
+      channels: req.body?.channels ?? null,
+    });
+    if (!clientVerslag.ok) {
+      res.status(422).json({ error: clientVerslag.error || 'Verslag genereren mislukt', clientVerslag });
+      return;
+    }
+    const pdfBuffer = await buildClientVerslagPdf(clientVerslag, {
+      url,
+      companyName: companyNameForVerslag(url, general),
+      generatedAt: clientVerslag.generatedAt,
+    });
+    res.json({
+      clientVerslag,
+      pdfBase64: pdfBuffer.toString('base64'),
+      filename: verslagPdfFilename(url, general),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/client-verslag/pdf', async (req, res) => {
+  const url = req.body?.url;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include string "url"' });
+    return;
+  }
+  const general = req.body?.general ?? null;
+  const clientVerslag = normalizeClientVerslag(req.body?.clientVerslag);
+  if (!clientVerslag.ok) {
+    res.status(422).json({ error: 'Geen opgeslagen verslag om als PDF te exporteren.' });
+    return;
+  }
+  try {
+    const pdfBuffer = await buildClientVerslagPdf(clientVerslag, {
+      url,
+      companyName: companyNameForVerslag(url, general),
+      generatedAt: clientVerslag.generatedAt,
+    });
+    res.json({
+      pdfBase64: pdfBuffer.toString('base64'),
+      filename: verslagPdfFilename(url, general),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });

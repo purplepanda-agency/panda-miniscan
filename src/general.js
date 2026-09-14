@@ -1,22 +1,51 @@
 /**
- * AI-powered general company / services / presence overview.
- * Each line is returned in both Business developer and Tech expert wording.
+ * AI-powered general company intake fields for the General tab.
+ * Fields that cannot be evidenced from the site stay empty for the user to fill.
  */
 
 import { generateAiJson, isAiConfigured, missingAiKeyError } from './ai.js';
 import { loadPrompt } from './prompts/load.js';
 
+/** @typedef {typeof GENERAL_FIELD_KEYS[number]} GeneralFieldKey */
+
+export const GENERAL_FIELD_KEYS = /** @type {const} */ ([
+  'companyNameWebsite',
+  'coreOffering',
+  'pricingBrands',
+  'locations',
+  'searchTerms',
+  'competitors',
+  'rawData',
+]);
+
 /**
- * @typedef {{ business: string, tech: string }} DualText
- *
  * @typedef {object} GeneralResult
  * @property {boolean} ok
- * @property {DualText[]} companyInfo
- * @property {DualText[]} mainServices
- * @property {DualText[]} onlinePresence
+ * @property {string} companyNameWebsite
+ * @property {string} coreOffering
+ * @property {string} pricingBrands
+ * @property {string} locations
+ * @property {string} searchTerms
+ * @property {string} competitors
+ * @property {string} rawData
  * @property {string|null} [error]
  * @property {string} [model]
  */
+
+/**
+ * @returns {Omit<GeneralResult, 'ok'|'error'|'model'>}
+ */
+function emptyFields() {
+  return {
+    companyNameWebsite: '',
+    coreOffering: '',
+    pricingBrands: '',
+    locations: '',
+    searchTerms: '',
+    competitors: '',
+    rawData: '',
+  };
+}
 
 /**
  * @param {object} input
@@ -31,9 +60,7 @@ export async function runGeneral(input) {
   if (!isAiConfigured()) {
     return {
       ok: false,
-      companyInfo: [],
-      mainServices: [],
-      onlinePresence: [],
+      ...emptyFields(),
       error: missingAiKeyError('General overview'),
     };
   }
@@ -50,23 +77,69 @@ export async function runGeneral(input) {
   if (!result.ok) {
     return {
       ok: false,
-      companyInfo: [],
-      mainServices: [],
-      onlinePresence: [],
+      ...emptyFields(),
       error: result.error,
       model: result.model,
     };
   }
 
-  const parsed = result.parsed;
+  const parsed = result.parsed && typeof result.parsed === 'object' ? result.parsed : {};
+  const fields = normalizeFields(parsed);
+
+  // rawData is always user-owned; never trust model output
+  fields.rawData = '';
+
+  // Prefer the crawled start URL when the model omitted the website
+  if (!fields.companyNameWebsite && input.url) {
+    fields.companyNameWebsite = String(input.url);
+  } else if (fields.companyNameWebsite && input.url && !/\bhttps?:\/\//i.test(fields.companyNameWebsite)) {
+    fields.companyNameWebsite = `${fields.companyNameWebsite} — ${input.url}`;
+  }
+
   return {
     ok: true,
-    companyInfo: toDualList(parsed.companyInfo, 3),
-    mainServices: toDualList(parsed.mainServices, 8),
-    onlinePresence: toDualList(parsed.onlinePresence, 4),
+    ...fields,
     error: null,
     model: result.model,
   };
+}
+
+/**
+ * @param {Record<string, unknown>} parsed
+ */
+function normalizeFields(parsed) {
+  const out = emptyFields();
+  for (const key of GENERAL_FIELD_KEYS) {
+    out[key] = toFieldText(parsed[key]);
+  }
+  return out;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function toFieldText(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === 'string') return item.trim();
+        if (item && typeof item === 'object') {
+          const obj = /** @type {Record<string, unknown>} */ (item);
+          return String(obj.business || obj.tech || obj.text || '').trim();
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (typeof value === 'object') {
+    const obj = /** @type {Record<string, unknown>} */ (value);
+    return String(obj.business || obj.tech || obj.text || '').trim();
+  }
+  return String(value).trim();
 }
 
 /**
@@ -120,7 +193,7 @@ function buildContext(input) {
         return p.url;
       }
     })();
-    if (/about|over-ons|over ons|diensten|services|product|shop|contact|prijs|pricing|case|referentie|faq/i.test(`${path} ${title}`)) {
+    if (/about|over-ons|over ons|diensten|services|product|shop|contact|prijs|pricing|merk|brand|locatie|vestiging|case|referentie|faq/i.test(`${path} ${title}`)) {
       navHints.push(`${path} — ${title}`);
     }
   }
@@ -133,7 +206,7 @@ function buildContext(input) {
   const orgHints = [];
   for (const p of pages.slice(0, 10)) {
     for (const block of p.jsonLd || []) {
-      if (/Organization|LocalBusiness|Corporation|WebSite|Product|Service|Offer/i.test(block)) {
+      if (/Organization|LocalBusiness|Corporation|WebSite|Product|Service|Offer|Brand|Store/i.test(block)) {
         orgHints.push(String(block).slice(0, 1200));
       }
     }
@@ -157,51 +230,4 @@ function buildContext(input) {
   ]
     .filter(Boolean)
     .join('\n\n');
-}
-
-/**
- * @param {unknown} value
- * @returns {DualText|null}
- */
-function toDual(value) {
-  if (value == null) return null;
-  if (typeof value === 'string') {
-    const text = value.trim();
-    return text ? { business: text, tech: text } : null;
-  }
-  if (typeof value === 'object' && !Array.isArray(value)) {
-    const obj = /** @type {Record<string, unknown>} */ (value);
-    const business = String(obj.business || obj.Business || obj.text || '').trim();
-    const tech = String(obj.tech || obj.Tech || obj.text || business).trim();
-    if (!business && !tech) return null;
-    return { business: business || tech, tech: tech || business };
-  }
-  return null;
-}
-
-/**
- * @param {unknown} value
- * @param {number} max
- * @returns {DualText[]}
- */
-function toDualList(value, max) {
-  if (!Array.isArray(value)) {
-    if (typeof value === 'string') {
-      return value
-        .split(/\n+/)
-        .map((l) => l.replace(/^[-*•]\s*/, '').trim())
-        .filter(Boolean)
-        .slice(0, max)
-        .map((text) => ({ business: text, tech: text }));
-    }
-    return [];
-  }
-  /** @type {DualText[]} */
-  const out = [];
-  for (const item of value) {
-    const dual = toDual(item);
-    if (dual) out.push(dual);
-    if (out.length >= max) break;
-  }
-  return out;
 }

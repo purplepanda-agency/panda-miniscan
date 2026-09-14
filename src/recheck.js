@@ -8,6 +8,7 @@ import { runContentQuickscan, selectImportantPages } from './content-quickscan.j
 import { generateAiJson, isAiConfigured, missingAiKeyError } from './ai.js';
 import { detectChannels } from './channels.js';
 import { runAiInsights } from './ai-insights.js';
+import { runClientVerslag } from './client-verslag.js';
 
 /**
  * Fetch a single HTML page.
@@ -404,5 +405,22 @@ export async function recheckAiInsights(startUrl, options = {}) {
     summary: options.summary,
     general: options.general,
     channels: options.channels,
+  });
+}
+
+/**
+ * Generate client verslag from insights, intake, and consultant notes.
+ * @param {string} startUrl
+ * @param {{ general?: object, aiInsights?: object, notesHtml?: string, savedNotes?: object[], channels?: object }} [options]
+ */
+export async function recheckClientVerslag(startUrl, options = {}) {
+  const start = normalizeStartUrl(startUrl);
+  return runClientVerslag({
+    url: start.href,
+    general: options.general ?? null,
+    aiInsights: options.aiInsights ?? null,
+    notesHtml: typeof options.notesHtml === 'string' ? options.notesHtml : '',
+    savedNotes: Array.isArray(options.savedNotes) ? options.savedNotes : [],
+    channels: options.channels ?? null,
   });
 }

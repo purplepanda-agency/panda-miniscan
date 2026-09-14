@@ -158,32 +158,26 @@ export function formatCliReport(report) {
   if (report.general) {
     lines.push(chalk.bold('General'));
     const g = report.general;
-    const role = report.audience === 'tech' ? 'tech' : 'business';
-    const pick = (value) => {
-      if (value == null) return '';
-      if (typeof value === 'string') return value;
-      if (typeof value === 'object') {
-        return String(role === 'tech' ? value.tech || value.business || '' : value.business || value.tech || '');
-      }
-      return String(value);
-    };
     if (!g.ok) {
       lines.push(chalk.red(`  ! ${g.error || 'General overview failed'}`));
     } else {
-      lines.push(chalk.bold('  Company info'));
-      for (const line of g.companyInfo || []) {
-        const text = pick(line);
-        if (text) lines.push(`    ${text}`);
-      }
-      lines.push(chalk.bold('  Main services'));
-      for (const line of g.mainServices || []) {
-        const text = pick(line);
-        if (text) lines.push(`    ${text}`);
-      }
-      lines.push(chalk.bold('  Online presence'));
-      for (const line of g.onlinePresence || []) {
-        const text = pick(line);
-        if (text) lines.push(`    ${text}`);
+      const fields = [
+        ['Bedrijfsnaam en website', g.companyNameWebsite],
+        ['Kernaanbod', g.coreOffering],
+        ['Prijspositionering / merken', g.pricingBrands],
+        ['Locatie(s) / verzorgingsgebied', g.locations],
+        ['Kernzoektermen', g.searchTerms],
+        ['Concurrenten', g.competitors],
+        ['Ruwe data', g.rawData],
+      ];
+      for (const [label, value] of fields) {
+        lines.push(chalk.bold(`  ${label}`));
+        const text = value != null ? String(value).trim() : '';
+        if (text) {
+          for (const line of text.split(/\n+/)) lines.push(`    ${line}`);
+        } else {
+          lines.push('    —');
+        }
       }
     }
     lines.push('');
