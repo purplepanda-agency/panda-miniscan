@@ -59,6 +59,7 @@ export async function runClientVerslag(input) {
     prompt,
     temperature: 0.25,
     maxOutputTokens: 8192,
+    model: input.model,
   });
 
   if (!result.ok) {

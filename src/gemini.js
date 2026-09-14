@@ -1,6 +1,9 @@
 /**
  * Shared Gemini generateContent helper with model fallback on rate limits.
+ * Antigravity uses the Interactions API (managed agent).
  */
+
+import { ANTIGRAVITY_AGENT, isAntigravityModel } from './models.js';
 
 /** Preferred order when a model is rate-limited (matches common AI Studio Flash quotas). */
 const BUILTIN_FALLBACKS = [
@@ -18,7 +21,7 @@ const BUILTIN_FALLBACKS = [
 function primaryModel(override) {
   const custom = typeof override === 'string' ? override.trim() : '';
   if (custom) return custom;
-  return process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+  return process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
 }
 
 /**
@@ -108,6 +111,124 @@ export function parseModelJson(text) {
 }
 
 /**
+ * Extract final text from an Interactions API response.
+ * @param {any} payload
+ * @returns {string}
+ */
+function interactionOutputText(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  if (typeof payload.output_text === 'string' && payload.output_text.trim()) {
+    return payload.output_text.trim();
+  }
+
+  /** @type {string[]} */
+  const chunks = [];
+  const steps = Array.isArray(payload.steps) ? payload.steps : [];
+  for (const step of steps) {
+    const content = Array.isArray(step?.content) ? step.content : [];
+    for (const part of content) {
+      if (part?.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
+        chunks.push(part.text.trim());
+      }
+    }
+  }
+  if (chunks.length) return chunks[chunks.length - 1];
+
+  const outputs = Array.isArray(payload.outputs) ? payload.outputs : [];
+  for (const out of outputs) {
+    if (typeof out?.text === 'string' && out.text.trim()) chunks.push(out.text.trim());
+    const content = Array.isArray(out?.content) ? out.content : [];
+    for (const part of content) {
+      if (part?.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
+        chunks.push(part.text.trim());
+      }
+    }
+  }
+  return chunks.length ? chunks[chunks.length - 1] : '';
+}
+
+/**
+ * Call Antigravity managed agent via Interactions API.
+ * @param {object} opts
+ * @param {string} opts.prompt
+ * @param {string} opts.apiKey
+ * @param {number} [opts.temperature]
+ * @returns {Promise<{ ok: true, parsed: any, text: string, model: string } | { ok: false, error: string, model?: string }>}
+ */
+async function generateAntigravityJson(opts) {
+  const model = ANTIGRAVITY_AGENT;
+  const endpoint = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+  const prompt = `${opts.prompt}
+
+Return ONLY valid JSON. No markdown fences or commentary.`;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 300_000);
+    let res;
+    try {
+      res = await fetch(endpoint, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': opts.apiKey,
+        },
+        body: JSON.stringify({
+          agent: model,
+          input: prompt,
+          environment: 'remote',
+          // Restrict tools: prompts already include crawled context.
+          tools: [],
+          response_format: {
+            type: 'text',
+            mime_type: 'application/json',
+          },
+          agent_config: {
+            type: 'antigravity',
+            model: 'gemini-3.8-flash',
+          },
+        }),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message =
+        payload?.error?.message ||
+        payload?.error?.status ||
+        `Antigravity API HTTP ${res.status}`;
+      return { ok: false, error: String(message), model };
+    }
+
+    if (payload?.status === 'failed') {
+      return {
+        ok: false,
+        error: String(payload?.error?.message || payload?.error || 'Antigravity interaction failed'),
+        model,
+      };
+    }
+
+    const text = interactionOutputText(payload);
+    const parsed = parseModelJson(text);
+    if (!parsed) {
+      return { ok: false, error: 'Antigravity returned an unreadable response.', model };
+    }
+    return { ok: true, parsed, text, model };
+  } catch (err) {
+    const message =
+      err instanceof Error
+        ? err.name === 'AbortError'
+          ? 'Antigravity request timed out'
+          : err.message
+        : String(err);
+    return { ok: false, error: message, model };
+  }
+}
+
+/**
  * Call Gemini generateContent, retrying with fallback models on rate limits.
  * @param {object} opts
  * @param {string} opts.prompt
@@ -123,7 +244,13 @@ export async function generateGeminiJson(opts) {
     return { ok: false, error: 'GEMINI_API_KEY is not set. Add it to your .env file.' };
   }
 
-  const models = geminiModelQueue(opts.model);
+  const requested =
+    typeof opts.model === 'string' && opts.model.trim() ? opts.model.trim() : primaryModel();
+  if (isAntigravityModel(requested)) {
+    return generateAntigravityJson({ ...opts, apiKey });
+  }
+
+  const models = geminiModelQueue(requested);
   /** @type {string[]} */
   const attempts = [];
   let lastError = 'Gemini request failed';

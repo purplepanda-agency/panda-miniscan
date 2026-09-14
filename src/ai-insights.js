@@ -86,8 +86,9 @@ export async function runAiInsights(input) {
 
   const result = await generateGeminiJson({
     prompt,
-    temperature: 0.22,
-    maxOutputTokens: 8192,
+    temperature: 0.28,
+    maxOutputTokens: 12288,
+    model: input.model,
   });
 
   if (!result.ok) {

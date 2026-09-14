@@ -43,6 +43,72 @@ function initThemeToggle() {
 }
 
 initThemeToggle();
+
+const MODEL_STORAGE_KEY = 'structa-ai-model';
+const DEFAULT_AI_MODEL = 'gemini-3.1-flash-lite';
+const AI_MODEL_OPTIONS = new Set([
+  'gemini-3.1-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'antigravity-preview-05-2026',
+]);
+
+/**
+ * @param {unknown} raw
+ * @returns {string}
+ */
+function normalizeAiModel(raw) {
+  const id = String(raw || '').trim();
+  return AI_MODEL_OPTIONS.has(id) ? id : DEFAULT_AI_MODEL;
+}
+
+/**
+ * @returns {HTMLSelectElement|null}
+ */
+function modelSelectEl() {
+  return /** @type {HTMLSelectElement|null} */ (document.getElementById('model'));
+}
+
+/**
+ * @returns {string}
+ */
+function selectedAiModel() {
+  return normalizeAiModel(modelSelectEl()?.value);
+}
+
+/**
+ * @param {string} model
+ */
+function setSelectedAiModel(model) {
+  const select = modelSelectEl();
+  if (!select) return;
+  const next = normalizeAiModel(model);
+  select.value = next;
+  try {
+    localStorage.setItem(MODEL_STORAGE_KEY, next);
+  } catch {
+    /* ignore */
+  }
+}
+
+function initModelSelect() {
+  const select = modelSelectEl();
+  if (!select) return;
+  let stored = DEFAULT_AI_MODEL;
+  try {
+    stored = normalizeAiModel(localStorage.getItem(MODEL_STORAGE_KEY));
+  } catch {
+    /* ignore */
+  }
+  select.value = stored;
+  select.addEventListener('change', () => {
+    setSelectedAiModel(select.value);
+  });
+}
+
+initModelSelect();
+
 /**
  * @param {string} text
  */
@@ -645,9 +711,11 @@ function renderAiInsightsList(aiInsights) {
     if (key && grouped[key]) grouped[key].push(card);
   }
 
-  return `<div class="ai-insights-blocks">${AI_INSIGHT_BLOCK_ORDER.map((blockKey) =>
-    renderAiInsightBlock(blockKey, grouped[blockKey] || []),
-  ).join('')}</div>`;
+  return `<div class="ai-insights-blocks">${AI_INSIGHT_BLOCK_ORDER.map((blockKey) => {
+    const cards = grouped[blockKey] || [];
+    if (!cards.length) return '';
+    return renderAiInsightBlock(blockKey, cards);
+  }).join('')}</div>`;
 }
 
 /**
@@ -674,10 +742,24 @@ function renderAiInsightBlock(blockKey, cards) {
  */
 function renderAiInsightFinding(card) {
   const lead = card.finding ? `<span class="insight-finding-point">${escapeHtml(card.finding)}</span>` : '';
-  const detail = card.explanation
-    ? `<span class="insight-finding-explanation">${escapeHtml(card.explanation)}</span>`
-    : '';
+  const detail = formatInsightExplanationHtml(card.explanation);
   return `<li class="insight-finding" data-insight-id="${escapeHtml(card.id)}">${lead}${detail}</li>`;
+}
+
+/**
+ * @param {string|null|undefined} text
+ */
+function formatInsightExplanationHtml(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  const parts = raw
+    .split(/\n{2,}|\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!parts.length) return '';
+  return parts
+    .map((p) => `<p class="insight-finding-explanation">${escapeHtml(p)}</p>`)
+    .join('');
 }
 
 /**
@@ -789,12 +871,12 @@ function formatSavedNoteTime(iso) {
  */
 function renderSavedNotesList(savedNotes) {
   if (!savedNotes.length) {
-    return '<p class="muted saved-notes-empty">Nog geen opgeslagen notities.</p>';
+    return '<p class="muted saved-notes-empty">Nog geen notities — typ hieronder en sla op.</p>';
   }
   return savedNotes
     .map(
       (note) => `
-    <article class="saved-note-card${editingSavedNoteId === note.id ? ' is-editing' : ''}" data-note-id="${escapeHtml(note.id)}">
+    <article class="saved-note-card saved-note-bubble${editingSavedNoteId === note.id ? ' is-editing' : ''}" data-note-id="${escapeHtml(note.id)}">
       <div class="saved-note-meta">
         <time datetime="${escapeHtml(note.savedAt)}">${escapeHtml(formatSavedNoteTime(note.savedAt))}</time>
         <div class="saved-note-actions">
@@ -817,6 +899,7 @@ function refreshSavedNotesUi() {
   const { savedNotes } = normalizeInsights(lastReport.insights);
   list.innerHTML = renderSavedNotesList(savedNotes);
   bindSavedNotesActions();
+  list.scrollTop = list.scrollHeight;
 }
 
 function syncNotesSaveButtonLabel() {
@@ -847,8 +930,8 @@ function startEditSavedNote(noteId) {
   syncNotesSaveButtonLabel();
   notesEditor.commands.focus('end');
 
-  const details = resultsEl.querySelector('.insights-notes-details');
-  if (details instanceof HTMLDetailsElement) details.open = true;
+  const composer = resultsEl.querySelector('.insights-notes-composer');
+  composer?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   setStatus('Notitie geladen — pas aan en klik Bijwerken.', false);
 }
 
@@ -1949,9 +2032,10 @@ function showReport(report, opts = {}) {
   if (lastAnalyzedUrl && urlInput.value.trim() !== lastAnalyzedUrl) {
     urlInput.value = lastAnalyzedUrl;
   }
-  const audienceSelect = /** @type {HTMLSelectElement|null} */ (document.getElementById('audience'));
-  if (audienceSelect && (report.audience === 'tech' || report.audience === 'business')) {
-    audienceSelect.value = report.audience;
+  const modelSelect = modelSelectEl();
+  const reportModel = report.aiModel || report.general?.model || report.quickscan?.model;
+  if (modelSelect && reportModel) {
+    setSelectedAiModel(String(reportModel));
   }
   showView('workspace');
   renderReport(report);
@@ -1982,42 +2066,42 @@ function renderInsightsPanel(insights) {
     ? `Laatste PDF: ${formatSavedNoteTime(clientVerslag.generatedAt)}`
     : '';
   return `
-    <div class="insights-page stack">
-      <section class="card insights-ai-main">
-        <div class="insights-ai-head">
-          <h3 class="panel-title">AI insights</h3>
-          <button type="button" class="generate-btn" id="insightsGenerate">Generate</button>
-        </div>
-        <p class="ai-insights-meta muted" data-ai-insights-meta ${metaLabel ? '' : 'hidden'}>${escapeHtml(metaLabel)}</p>
-        <div class="ai-insights-list" data-ai-insights-list>${renderAiInsightsList(aiInsights)}</div>
-      </section>
-      <section class="insights-notes-compact">
-        <details class="insights-notes-details" open>
-          <summary class="insights-notes-summary">
-            <span class="insights-notes-summary-title">Eigen notities</span>
-            <span class="insights-notes-summary-hint">Observaties tijdens het gesprek — niet meegenomen in AI insights</span>
-          </summary>
-          <div class="insights-notes-details-body">
-            <div class="notes-toolbar notes-toolbar--compact" role="toolbar" aria-label="Notes formatting">
-              <button type="button" class="notes-tool" data-notes-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
-              <button type="button" class="notes-tool" data-notes-cmd="italic" title="Italic" aria-label="Italic"><em>I</em></button>
-              <span class="notes-tool-sep" aria-hidden="true"></span>
-              <button type="button" class="notes-tool" data-notes-cmd="heading" title="Heading" aria-label="Heading">H</button>
-              <button type="button" class="notes-tool" data-notes-cmd="bulletList" title="Bullet list" aria-label="Bullet list">••</button>
-              <button type="button" class="notes-tool" data-notes-cmd="orderedList" title="Numbered list" aria-label="Numbered list">1.</button>
-              <span class="notes-tool-sep" aria-hidden="true"></span>
-              <button type="button" class="notes-save-btn" id="notesSaveBtn" title="Save note">Opslaan</button>
+    <div class="insights-page">
+      <div class="insights-split">
+        <section class="card insights-col-ai">
+          <div class="insights-ai-head">
+            <h3 class="panel-title">AI insights</h3>
+            <button type="button" class="generate-btn" id="insightsGenerate">Generate</button>
+          </div>
+          <p class="ai-insights-meta muted" data-ai-insights-meta ${metaLabel ? '' : 'hidden'}>${escapeHtml(metaLabel)}</p>
+          <div class="ai-insights-list" data-ai-insights-list>${renderAiInsightsList(aiInsights)}</div>
+        </section>
+        <aside class="insights-col-notes" aria-label="Eigen notities">
+          <div class="insights-notes-chat">
+            <div class="insights-notes-chat-head">
+              <h3 class="panel-title">Eigen notities</h3>
+              <p class="muted insights-notes-chat-hint">Observaties tijdens het gesprek — éénrichtingsverkeer, niet meegenomen in AI insights</p>
             </div>
-            <div class="notes-editor notes-editor--compact">
-              <div class="notes-editor-mount" data-notes-editor></div>
-            </div>
-            <div class="saved-notes saved-notes--compact">
-              <h4 class="saved-notes-title">Opgeslagen notities</h4>
-              <div class="saved-notes-list" data-saved-notes-list>${renderSavedNotesList(savedNotes)}</div>
+            <div class="insights-notes-thread saved-notes-list" data-saved-notes-list>${renderSavedNotesList(savedNotes)}</div>
+            <div class="insights-notes-composer">
+              <div class="notes-toolbar" role="toolbar" aria-label="Notes formatting">
+                <button type="button" class="notes-tool" data-notes-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
+                <button type="button" class="notes-tool" data-notes-cmd="italic" title="Italic" aria-label="Italic"><em>I</em></button>
+                <span class="notes-tool-sep" aria-hidden="true"></span>
+                <button type="button" class="notes-tool" data-notes-cmd="heading" title="Heading" aria-label="Heading">H</button>
+                <button type="button" class="notes-tool" data-notes-cmd="bulletList" title="Bullet list" aria-label="Bullet list">••</button>
+                <button type="button" class="notes-tool" data-notes-cmd="orderedList" title="Numbered list" aria-label="Numbered list">1.</button>
+              </div>
+              <div class="notes-editor notes-editor--chat">
+                <div class="notes-editor-mount" data-notes-editor></div>
+              </div>
+              <div class="insights-notes-composer-actions">
+                <button type="button" class="notes-save-btn" id="notesSaveBtn" title="Save note">Opslaan</button>
+              </div>
             </div>
           </div>
-        </details>
-      </section>
+        </aside>
+      </div>
       <div class="insights-verslag-footer">
         <p class="ai-insights-meta muted insights-verslag-meta" data-verslag-pdf-meta ${verslagMeta ? '' : 'hidden'}>${escapeHtml(verslagMeta)}</p>
         <div class="insights-verslag-actions">
@@ -2145,6 +2229,10 @@ async function mountNotesEditor() {
       if (!saved) {
         setStatus('Niets om op te slaan — schrijf eerst een notitie.', true);
         return;
+      }
+      if (notesEditor) {
+        notesEditor.commands.setContent('', false);
+        persistNotesHtml('');
       }
       setStatus(wasEdit ? 'Notitie bijgewerkt.' : 'Notitie opgeslagen.', false);
     });
@@ -2333,8 +2421,6 @@ function bindViewAudienceControls() {
       if (!lastReport) return;
       const role = select.value === 'tech' ? 'tech' : 'business';
       const next = { ...lastReport, audience: role };
-      const formAudience = /** @type {HTMLSelectElement|null} */ (document.getElementById('audience'));
-      if (formAudience) formAudience.value = role;
       showReport(next, { preserveUi: true, statusText: `Showing ${role === 'tech' ? 'Tech expert' : 'Business developer'} wording` });
     });
   });
@@ -2488,7 +2574,7 @@ async function recheckQuickscanItem(btn) {
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ siteUrl, item: itemText, kind }),
+      body: JSON.stringify({ siteUrl, item: itemText, kind, model: selectedAiModel() }),
     });
     const data = await readApiJson(res);
     if (!res.ok) throw new Error(data.error || data.note || `HTTP ${res.status}`);
@@ -2565,6 +2651,7 @@ async function generateAiInsightsItem(btn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url,
+        model: selectedAiModel(),
         pages: lightPagesPayload(),
         summary: lastReport.summary,
         llms: lastReport.llms
@@ -2618,6 +2705,7 @@ async function generateClientVerslagItem(btn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url,
+        model: selectedAiModel(),
         general: lastReport.general ?? null,
         aiInsights: insights.aiInsights,
         notesHtml: insights.notesHtml,
@@ -2707,6 +2795,7 @@ async function recheckGeneralItem(btn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url,
+        model: selectedAiModel(),
         pages: lightPagesPayload(),
         summary: lastReport.summary,
         llms: lastReport.llms
@@ -2721,7 +2810,7 @@ async function recheckGeneralItem(btn) {
     if (general?.ok && preservedRawData.trim()) {
       general = { ...general, rawData: preservedRawData };
     }
-    const next = { ...lastReport, general };
+    const next = { ...lastReport, general, aiModel: selectedAiModel() };
     showReport(next, {
       preserveUi: true,
       statusText: data.general?.ok
@@ -2754,6 +2843,7 @@ async function recheckQuickscanSection(btn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url,
+        model: selectedAiModel(),
         pages: lightPagesPayload(),
         summary: lastReport.summary,
         llms: lastReport.llms
@@ -2764,7 +2854,7 @@ async function recheckQuickscanSection(btn) {
     const data = await readApiJson(res);
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
-    const next = { ...lastReport, quickscan: data.quickscan };
+    const next = { ...lastReport, quickscan: data.quickscan, aiModel: selectedAiModel() };
     showReport(next, {
       preserveUi: true,
       statusText: data.quickscan?.ok
@@ -2797,6 +2887,7 @@ async function recheckContentQuickscanSection(btn) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url,
+        model: selectedAiModel(),
         pages: lightPagesPayload(40),
         summary: lastReport.summary,
       }),
@@ -2804,7 +2895,7 @@ async function recheckContentQuickscanSection(btn) {
     const data = await readApiJson(res);
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
-    const next = { ...lastReport, contentQuickscan: data.contentQuickscan };
+    const next = { ...lastReport, contentQuickscan: data.contentQuickscan, aiModel: selectedAiModel() };
     showReport(next, {
       preserveUi: true,
       statusText: data.contentQuickscan?.ok
@@ -2938,8 +3029,7 @@ form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const url = urlInput.value.trim();
   const maxPages = Number(/** @type {HTMLInputElement} */ (document.getElementById('maxPages')).value) || 50;
-  const audienceRaw = /** @type {HTMLSelectElement} */ (document.getElementById('audience')).value;
-  const audience = audienceRaw === 'tech' ? 'tech' : 'business';
+  const model = selectedAiModel();
 
   submitBtn.disabled = true;
   clearResults();
@@ -2952,7 +3042,7 @@ form.addEventListener('submit', async (event) => {
     const res = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, maxPages, audience }),
+      body: JSON.stringify({ url, maxPages, model }),
     });
     const data = await readApiJson(res);
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);

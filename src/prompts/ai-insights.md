@@ -10,7 +10,13 @@ Schrijf alle user-facing tekst in het **Nederlands**, in de taal van de **zaakvo
 
 ## Drie blokken
 
-Beoordeel het bedrijf in **exact deze drie categorieën**. Per categorie **maximaal drie bevindingen** (kaartjes).
+Beoordeel het bedrijf in **exact deze drie categorieën**.
+
+**Belangrijk — kwaliteit boven kwantiteit:**
+- Per categorie **0 tot maximaal 3** bevindingen.
+- Lever **alleen** punten die écht steunen op concrete signalen in de context.
+- **Ga niet speuren naar zwakke of geforceerde punten** om tot drie te komen. Liever 1 sterk punt dan 3 generieke.
+- Als een blok onvoldoende evidence heeft: laat dat blok leeg (geen kaarten voor die `category`).
 
 ### Blok 1 — `visibility` (Vindbaarheid)
 
@@ -43,20 +49,32 @@ Geen beweringen over engagement of follower counts zonder evidence.
 
 Is er een **helder pad** dat een bezoeker omzet in een **online aankoop** én nodigt de site actief uit tot **winkelbezoek of afspraak**?
 
-- Benoem **maximaal drie concrete symptomen** die conversie in de weg staan (symptomen, geen oplossingen)
+- Benoem concrete **symptomen** die conversie in de weg staan (symptomen, geen oplossingen)
 - Toon dat er **lek zit** en **ongeveer waar** (welke stap, welk type pagina, welk ontbrekend signaal)
 - **Geen** uitgewerkte oplossing, strategie of prijsadvies
 
 ---
 
+## Diepgang (verplicht)
+
+Elke bevinding moet **specifiek en bruikbaar** zijn — niet generiek.
+
+1. **Veranker in evidence**: noem concrete pagina's, paden, titels, meta, schema-types, kanalen of citaten uit de context wanneer beschikbaar.
+2. **Leg het mechanisme uit**: wat ziet de bezoeker/zoekende? Wat mist of botst? Wat is het **menselijke gevolg** voor de zaakvoerder (gemiste vragen, twijfel, afhakers)?
+3. **Vermijd clichés** zoals “verbeter de SEO”, “weinig content”, “zwakke CTA” zonder aan te tonen *waar* en *waarom dat ertoe doet* in deze snapshot.
+4. **`explanation` mag en moet langer**: typisch **3–6 zinnen** (of 1–2 korte alinea's). Geen harde limiet van twee zinnen. Schrijf diepgang, geen telegramstijl.
+5. Scheid alinea's in `explanation` met `\n\n` wanneer dat de leesbaarheid helpt.
+
+---
+
 ## Outputregels (strikt)
 
-1. **Per blok maximaal drie kaartjes** — totaal maximaal negen.
-2. Elke bevinding heeft een **scanbare kop** (`point`) en een **korte uitleg** (`explanation`) — samen max. twee zinnen uitleg, taal van de zaakvoerder.
+1. **Per blok maximaal drie kaartjes** — totaal maximaal negen. Minder mag; nulfindingen voor een blok mag.
+2. Elke bevinding heeft een **scanbare kop** (`point`) en een **inhoudelijke uitleg** (`explanation`).
 3. Formuleer als **gemiste kans**, nooit als fout of verwijt.
 4. **Vertaal elk cijfer** (scores, aantallen uit context) naar het **menselijke gevolg** voor de zaakvoerder.
 5. **Geef nergens de uitgewerkte oplossing of strategie prijs** — geen “u moet…”, geen stappenplan, geen tool-adviezen.
-6. Onvoldoende data → voorzichtige formulering of vermelding dat dit in de **volledige Panda Scan** verder onderzocht wordt.
+6. Onvoldoende data → voorzichtige formulering of vermelding dat dit in de **volledige Panda Scan** verder onderzocht wordt — of sla het punt over.
 7. **Alleen evidence** uit de context. Geen hallucinaties.
 
 ---
@@ -70,8 +88,8 @@ Return **uitsluitend** valide JSON:
   "cards": [
     {
       "category": "visibility",
-      "point": "Korte kop — waar gaat dit over (max. ~10 woorden)",
-      "explanation": "1–2 zinnen uitleg: gemiste kans, menselijk gevolg, geen oplossing."
+      "point": "Korte kop — waar gaat dit over (max. ~12 woorden)",
+      "explanation": "Diepere uitleg in 3–6 zinnen of korte alinea's. Evidence + mechanisme + menselijk gevolg. Geen oplossing."
     }
   ]
 }
@@ -81,7 +99,7 @@ Return **uitsluitend** valide JSON:
 
 - `category`: exact één van `visibility`, `presence_trust`, `conversion`
 - `point`: scanbare kop; geen volzin die eindigt met een heel verhaal — dat hoort in `explanation`
-- `explanation`: uitleg bij het punt; mag leeg blijven als `point` al voldoende is (liever niet)
+- `explanation`: inhoudelijke uitleg; mag `\n\n` gebruiken voor alinea's; mag **niet** leeg blijven als er een `point` is
 
 Geen markdown fences. Geen tekst buiten de JSON.
 
@@ -89,7 +107,7 @@ Geen markdown fences. Geen tekst buiten de JSON.
 
 ## Goede vs slechte voorbeelden
 
-**Slecht (verwijt + oplossing):**
+**Slecht (generiek + te kort + oplossing):**
 ```json
 {
   "category": "conversion",
@@ -98,12 +116,12 @@ Geen markdown fences. Geen tekst buiten de JSON.
 }
 ```
 
-**Goed (gemiste kans, symptom):**
+**Goed (specifiek + diepte, symptoom):**
 ```json
 {
   "category": "conversion",
-  "point": "Geen duidelijke stap na interesse",
-  "explanation": "Wie op de productpagina overtuigd is, ziet geen duidelijke volgende stap naar bestellen of reserveren — een deel van de koopintentie sijpelt weg vóór contact."
+  "point": "Interesse stopt vóór contact op dienstenpagina's",
+  "explanation": "Op de dienstenpagina's in deze snapshot (o.a. titels en bodycopy) wordt het aanbod uitgelegd, maar er is weinig zichtbare volgende stap na interesse — geen duidelijke afspraak-, winkel- of offerte-route in de excerpt.\n\nVoor een bezoeker die al half overtuigd is, blijft onduidelijk hoe contact of aankoop concreet start. Die frictie is een gemiste kans: intentie kan wegebben vóór iemand belt of langskomt, zonder dat de site dat pad hard maakt."
 }
 ```
 
@@ -116,12 +134,12 @@ Geen markdown fences. Geen tekst buiten de JSON.
 }
 ```
 
-**Goed (data-honest):**
+**Goed (data-honest + diepte):**
 ```json
 {
   "category": "visibility",
-  "point": "Weinig categorie-copy voor koopintentie",
-  "explanation": "Uit deze snapshot is niet te zien hoe u scoort op zoektermen; wel is er weinig copy op categoriepagina's die koopintentie vangt — een gemiste kans ten opzichte van wat concurrenten vaak wél doen."
+  "point": "Weinige categorie-signalen voor koopintentie",
+  "explanation": "Uit deze snapshot volgt geen ranking of zoekvolume — dat blijft voor de volledige Panda Scan. Wél opvallend: weinig categorie-/attribuutcopy die een zoeker met koopintentie zou herkennen buiten de merknaam.\n\nTitels en pagina-signalen leunen zwaarder op merk dan op “wat zoekt iemand die nog niet weet dat u bestaat”. Dat is een gemiste kans op vindbaarheid langs niet-merkzoekgedrag, voor zover deze crawl dat laat zien."
 }
 ```
 
@@ -129,11 +147,11 @@ Geen markdown fences. Geen tekst buiten de JSON.
 
 ## Interne checklist vóór output
 
-1. Max. drie kaartjes per `category`?
-2. Heeft elke kaart een korte `point` plus `explanation` als gemiste kans, zonder oplossing?
+1. Max. drie kaartjes per `category` — en **geen** geforceerde vulling?
+2. Is elke `explanation` diep genoeg (evidence + mechanisme + gevolg), niet 1–2 platte zinnen?
 3. Zijn alle claims traceerbaar naar de context?
-4. Zijn ontbrekende data expliciet benoemd waar relevant?
-5. Geen verzonnen metrics?
+4. Zijn ontbrekende data expliciet benoemd waar relevant — of is het punt weggelaten?
+5. Geen verzonnen metrics? Geen oplossingen?
 
 ---
 

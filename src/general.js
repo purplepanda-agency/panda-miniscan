@@ -54,6 +54,7 @@ function emptyFields() {
  * @param {import('./analyze.js').PageAnalysis[]} [input.pages]
  * @param {import('./llms.js').LlmsAnalysis} [input.llms]
  * @param {object} [input.summary]
+ * @param {string} [input.model]
  * @returns {Promise<GeneralResult>}
  */
 export async function runGeneral(input) {
@@ -73,6 +74,7 @@ export async function runGeneral(input) {
     temperature: 0.2,
     tier: 'basic',
     maxOutputTokens: 4096,
+    model: input.model,
   });
   if (!result.ok) {
     return {

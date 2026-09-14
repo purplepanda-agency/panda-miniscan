@@ -55,6 +55,7 @@ export async function runQuickscan(input) {
     prompt,
     temperature: 0.22,
     maxOutputTokens: 8192,
+    model: input.model,
   });
   if (!result.ok) {
     return {

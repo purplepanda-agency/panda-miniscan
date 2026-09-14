@@ -15,11 +15,12 @@ import { detectChannels } from './channels.js';
 /**
  * Analyze an entire site for JSON-LD quality, llms.txt, Gemini quickscans, and general overview.
  * @param {string} url
- * @param {CrawlOptions & { skipQuickscan?: boolean, skipContentQuickscan?: boolean, skipGeneral?: boolean, audience?: 'business'|'tech' }} [options]
+ * @param {CrawlOptions & { skipQuickscan?: boolean, skipContentQuickscan?: boolean, skipGeneral?: boolean, audience?: 'business'|'tech', model?: string }} [options]
  */
 export async function analyzeSite(url, options = {}) {
   const onProgress = options.onProgress || (() => {});
   const audience = options.audience === 'tech' ? 'tech' : 'business';
+  const model = typeof options.model === 'string' && options.model.trim() ? options.model.trim() : undefined;
 
   onProgress('Checking llms.txt…');
   const llmsPromise = analyzeLlmsTxt(url, { timeoutMs: options.timeoutMs });
@@ -109,6 +110,7 @@ export async function analyzeSite(url, options = {}) {
     pages: analyses,
     llms,
     summary,
+    model,
   };
 
   /** @type {import('./quickscan.js').QuickscanResult|null} */
@@ -151,6 +153,7 @@ export async function analyzeSite(url, options = {}) {
     startUrl: url,
     analyzedAt: new Date().toISOString(),
     audience,
+    aiModel: model || null,
     summary,
     pages: analyses,
     llms,

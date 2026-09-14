@@ -63,12 +63,12 @@ export async function generateAiJson(opts) {
   }
 
   // Gemini: map tier=basic → GEMINI_MODEL_BASIC unless model already set
-  let model = opts.model;
+  let model = typeof opts.model === 'string' && opts.model.trim() ? opts.model.trim() : '';
   if (!model && opts.tier === 'basic') {
     model =
       String(process.env.GEMINI_MODEL_BASIC || '').trim() ||
       String(process.env.GEMINI_MODEL || '').trim() ||
-      undefined;
+      '';
   }
-  return generateGeminiJson({ ...opts, model });
+  return generateGeminiJson({ ...opts, model: model || undefined });
 }

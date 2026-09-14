@@ -6,12 +6,21 @@ import { analyzeSite } from './index.js';
 import { recheckPage, recheckLlms, confirmQuickscanItem, recheckGeneral, recheckQuickscan, recheckContentQuickscan, recheckChannels, recheckAiInsights, recheckClientVerslag } from './recheck.js';
 import { buildClientVerslagPdf, companyNameForVerslag, verslagPdfFilename } from './client-verslag-pdf.js';
 import { normalizeClientVerslag } from './client-verslag.js';
+import { resolveGeminiModel } from './models.js';
 
 loadEnv();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
 const PORT = Number(process.env.PORT) || 3847;
+
+/**
+ * @param {unknown} body
+ * @returns {string}
+ */
+function modelFromBody(body) {
+  return resolveGeminiModel(body?.model);
+}
 
 const app = express();
 app.use(express.json({ limit: '512kb' }));
@@ -29,6 +38,7 @@ app.post('/api/analyze', async (req, res) => {
   const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 10_000));
   const respectRobots = req.body.respectRobots !== false;
   const audience = req.body?.audience === 'tech' ? 'tech' : 'business';
+  const model = modelFromBody(req.body);
 
   try {
     const report = await analyzeSite(url, {
@@ -37,6 +47,7 @@ app.post('/api/analyze', async (req, res) => {
       timeoutMs,
       respectRobots,
       audience,
+      model,
       skipQuickscan: true,
       skipContentQuickscan: true,
       skipGeneral: false,
@@ -89,8 +100,9 @@ app.post('/api/recheck/quickscan-item', async (req, res) => {
   }
   const kind = req.body?.kind === 'wins' ? 'wins' : 'issues';
   const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 12_000));
+  const model = modelFromBody(req.body);
   try {
-    const result = await confirmQuickscanItem({ siteUrl, item, kind, timeoutMs });
+    const result = await confirmQuickscanItem({ siteUrl, item, kind, timeoutMs, model });
     if (!result.ok) {
       res.status(502).json(result);
       return;
@@ -110,6 +122,7 @@ app.post('/api/recheck/general', async (req, res) => {
   }
   const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 12_000));
   const audience = req.body?.audience === 'tech' ? 'tech' : 'business';
+  const model = modelFromBody(req.body);
   const pages = Array.isArray(req.body?.pages)
     ? req.body.pages.slice(0, 25).map((p) => ({
         url: p?.url,
@@ -131,6 +144,7 @@ app.post('/api/recheck/general', async (req, res) => {
       pages,
       summary: req.body?.summary,
       audience,
+      model,
       llms: req.body?.llms
         ? { found: Boolean(req.body.llms.found), score: req.body.llms.score }
         : undefined,
@@ -150,6 +164,7 @@ app.post('/api/recheck/quickscan', async (req, res) => {
   }
   const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 12_000));
   const audience = req.body?.audience === 'tech' ? 'tech' : 'business';
+  const model = modelFromBody(req.body);
   const pages = Array.isArray(req.body?.pages)
     ? req.body.pages.slice(0, 25).map((p) => ({
         url: p?.url,
@@ -171,6 +186,7 @@ app.post('/api/recheck/quickscan', async (req, res) => {
       pages,
       summary: req.body?.summary,
       audience,
+      model,
       llms: req.body?.llms
         ? { found: Boolean(req.body.llms.found), score: req.body.llms.score }
         : undefined,
@@ -190,6 +206,7 @@ app.post('/api/recheck/content-quickscan', async (req, res) => {
   }
   const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 20_000));
   const audience = req.body?.audience === 'tech' ? 'tech' : 'business';
+  const model = modelFromBody(req.body);
   const pages = Array.isArray(req.body?.pages)
     ? req.body.pages.slice(0, 40).map((p) => ({
         url: p?.url,
@@ -211,6 +228,7 @@ app.post('/api/recheck/content-quickscan', async (req, res) => {
       pages,
       summary: req.body?.summary,
       audience,
+      model,
     });
     res.json({ contentQuickscan });
   } catch (err) {
@@ -228,8 +246,9 @@ app.post('/api/recheck/content-quickscan-item', async (req, res) => {
   }
   const kind = req.body?.kind === 'wins' ? 'wins' : 'issues';
   const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 12_000));
+  const model = modelFromBody(req.body);
   try {
-    const result = await confirmQuickscanItem({ siteUrl, item, kind, timeoutMs });
+    const result = await confirmQuickscanItem({ siteUrl, item, kind, timeoutMs, model });
     if (!result.ok) {
       res.status(502).json(result);
       return;
@@ -280,6 +299,7 @@ app.post('/api/recheck/ai-insights', async (req, res) => {
     return;
   }
   const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 25_000));
+  const model = modelFromBody(req.body);
   const pages = Array.isArray(req.body?.pages)
     ? req.body.pages.slice(0, 25).map((p) => ({
         url: p?.url,
@@ -302,6 +322,7 @@ app.post('/api/recheck/ai-insights', async (req, res) => {
     const aiInsights = await recheckAiInsights(url, {
       timeoutMs,
       pages,
+      model,
       summary: req.body?.summary,
       llms: req.body?.llms
         ? { found: Boolean(req.body.llms.found), score: req.body.llms.score }
@@ -324,8 +345,10 @@ app.post('/api/recheck/client-verslag', async (req, res) => {
   }
   try {
     const general = req.body?.general ?? null;
+    const model = modelFromBody(req.body);
     const clientVerslag = await recheckClientVerslag(url, {
       general,
+      model,
       aiInsights: req.body?.aiInsights ?? null,
       notesHtml: typeof req.body?.notesHtml === 'string' ? req.body.notesHtml : '',
       savedNotes: Array.isArray(req.body?.savedNotes) ? req.body.savedNotes : [],
