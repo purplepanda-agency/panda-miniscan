@@ -1,10 +1,12 @@
 /**
- * Build a client verslag PDF (A4) — 2×2 blocks + quick wins.
+ * Build a client verslag PDF (A4) — 2×2 blocks + deeper todos + site signals.
  */
 
 import PDFDocument from 'pdfkit';
+import { normalizeSiteSignals } from './site-signals.js';
 
 /** @typedef {import('./client-verslag.js').ClientVerslagResult} ClientVerslagResult */
+/** @typedef {import('./site-signals.js').SiteSignals} SiteSignals */
 
 const BLOCK_TITLES = {
   visibility: 'Vindbaarheid',
@@ -13,36 +15,48 @@ const BLOCK_TITLES = {
 };
 
 const OWN_FINDINGS_TITLE = 'Eigen bevindingen';
+const TODOS_TITLE = 'Aanbevolen to-do’s';
+
+const COLORS = {
+  ink: '#1a1f2c',
+  muted: '#5c6578',
+  border: '#d5dae5',
+  soft: '#f3f5f9',
+  accent: '#ff5a1f',
+  accentSoft: '#fff1e8',
+  ok: '#1f8f5f',
+  miss: '#c23d3d',
+  score: '#2f6fed',
+};
 
 /**
  * @param {ClientVerslagResult} verslag
- * @param {{ url?: string, companyName?: string, generatedAt?: string|null }} [meta]
+ * @param {{ url?: string, companyName?: string, generatedAt?: string|null, signals?: SiteSignals|null }} [meta]
  * @returns {Promise<Buffer>}
  */
 export function buildClientVerslagPdf(verslag, meta = {}) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 48 });
+    const doc = new PDFDocument({ size: 'A4', margin: 44 });
     /** @type {Buffer[]} */
     const chunks = [];
     doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const headline = String(meta.companyName || meta.url || 'Miniscan verslag').trim();
-    doc.font('Helvetica-Bold').fontSize(18).fillColor('#111111').text(headline, { align: 'left' });
-    if (meta.url) {
-      doc.moveDown(0.35);
-      doc.font('Helvetica').fontSize(9).fillColor('#666666').text(meta.url);
-    }
-    if (meta.generatedAt) {
-      doc.fontSize(8).text(formatPdfDate(meta.generatedAt));
-    }
-    doc.moveDown(0.85);
-    doc.fillColor('#111111');
+    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const leftX = doc.page.margins.left;
+    const signals = normalizeSiteSignals(meta.signals);
+
+    renderHeader(doc, meta, pageWidth, leftX);
+    renderSignalsRow(doc, signals, pageWidth, leftX);
 
     if (verslag.intro) {
-      doc.font('Helvetica').fontSize(10.5).text(verslag.intro, { align: 'left', lineGap: 3 });
-      doc.moveDown(0.75);
+      doc
+        .font('Helvetica')
+        .fontSize(10.5)
+        .fillColor(COLORS.ink)
+        .text(verslag.intro, leftX, doc.y, { width: pageWidth, align: 'left', lineGap: 3 });
+      doc.moveDown(0.85);
     }
 
     /** @type {Record<string, { title: string, items: { lead: string, text: string }[] }>} */
@@ -66,24 +80,22 @@ export function buildClientVerslagPdf(verslag, meta = {}) {
       },
     ];
 
-    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    const gutter = 16;
+    const gutter = 14;
     const colWidth = (pageWidth - gutter) / 2;
-    const leftX = doc.page.margins.left;
     const rightX = leftX + colWidth + gutter;
 
     let rowY = doc.y;
-    const h1 = renderBlockBox(doc, gridBlocks[0], leftX, rowY, colWidth);
-    const h2 = renderBlockBox(doc, gridBlocks[1], rightX, rowY, colWidth);
-    rowY = Math.max(h1, h2) + 14;
+    const h1 = renderBlockBox(doc, gridBlocks[0], leftX, rowY, colWidth, '#7db1ff');
+    const h2 = renderBlockBox(doc, gridBlocks[1], rightX, rowY, colWidth, '#5dcea0');
+    rowY = Math.max(h1, h2) + 12;
 
     ensureSpace(doc, rowY, 120);
-    const h3 = renderBlockBox(doc, gridBlocks[2], leftX, rowY, colWidth);
-    const h4 = renderBlockBox(doc, gridBlocks[3], rightX, rowY, colWidth);
-    doc.y = Math.max(h3, h4) + 18;
+    const h3 = renderBlockBox(doc, gridBlocks[2], leftX, rowY, colWidth, '#eea53d');
+    const h4 = renderBlockBox(doc, gridBlocks[3], rightX, rowY, colWidth, '#9aa3b5');
+    doc.y = Math.max(h3, h4) + 16;
 
     if (verslag.quickWins?.length) {
-      renderQuickWinsFrame(doc, verslag.quickWins, pageWidth, leftX);
+      renderTodosFrame(doc, verslag.quickWins, pageWidth, leftX);
     }
 
     doc.end();
@@ -92,101 +104,237 @@ export function buildClientVerslagPdf(verslag, meta = {}) {
 
 /**
  * @param {import('pdfkit').PDFDocument} doc
+ * @param {{ url?: string, companyName?: string, generatedAt?: string|null }} meta
+ * @param {number} pageWidth
+ * @param {number} leftX
+ */
+function renderHeader(doc, meta, pageWidth, leftX) {
+  const headline = String(meta.companyName || meta.url || 'Miniscan verslag').trim();
+
+  doc.save();
+  doc.rect(leftX, doc.y, pageWidth, 3).fill(COLORS.accent);
+  doc.restore();
+  doc.moveDown(0.55);
+
+  doc.font('Helvetica-Bold').fontSize(20).fillColor(COLORS.ink).text(headline, { align: 'left' });
+  if (meta.url) {
+    doc.moveDown(0.25);
+    doc.font('Helvetica').fontSize(9).fillColor(COLORS.muted).text(meta.url);
+  }
+  if (meta.generatedAt) {
+    doc.fontSize(8).fillColor(COLORS.muted).text(formatPdfDate(meta.generatedAt));
+  }
+  doc.moveDown(0.7);
+  doc.fillColor(COLORS.ink);
+}
+
+/**
+ * @param {import('pdfkit').PDFDocument} doc
+ * @param {SiteSignals} signals
+ * @param {number} pageWidth
+ * @param {number} leftX
+ */
+function renderSignalsRow(doc, signals, pageWidth, leftX) {
+  const chips = [
+    { label: 'Meta', value: formatScore(signals.metaScore), tone: scoreTone(signals.metaScore) },
+    { label: 'Sitemap', value: signals.sitemap ? 'Ja' : 'Nee', tone: signals.sitemap ? 'ok' : 'miss' },
+    { label: 'Tracking', value: signals.tracking ? 'Ja' : 'Nee', tone: signals.tracking ? 'ok' : 'miss' },
+    { label: 'Robots', value: signals.robots ? 'Ja' : 'Nee', tone: signals.robots ? 'ok' : 'miss' },
+    { label: 'llms.txt', value: signals.llms ? 'Ja' : 'Nee', tone: signals.llms ? 'ok' : 'miss' },
+    { label: 'JSON-LD', value: formatScore(signals.jsonLdScore), tone: scoreTone(signals.jsonLdScore) },
+  ];
+
+  const gap = 8;
+  const chipW = (pageWidth - gap * (chips.length - 1)) / chips.length;
+  const chipH = 36;
+  let x = leftX;
+  const y = doc.y;
+
+  for (const chip of chips) {
+    doc.save();
+    doc.roundedRect(x, y, chipW, chipH, 5).fillAndStroke(COLORS.soft, COLORS.border);
+    doc.restore();
+
+    doc
+      .font('Helvetica')
+      .fontSize(7)
+      .fillColor(COLORS.muted)
+      .text(chip.label.toUpperCase(), x + 8, y + 6, { width: chipW - 16, lineBreak: false });
+
+    const valueColor =
+      chip.tone === 'ok' ? COLORS.ok : chip.tone === 'miss' ? COLORS.miss : chip.tone === 'score' ? COLORS.score : COLORS.ink;
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor(valueColor)
+      .text(chip.value, x + 8, y + 18, { width: chipW - 16, lineBreak: false });
+
+    x += chipW + gap;
+  }
+
+  doc.y = y + chipH + 14;
+}
+
+/**
+ * @param {number|null} score
+ */
+function formatScore(score) {
+  return typeof score === 'number' && Number.isFinite(score) ? String(Math.round(score)) : '—';
+}
+
+/**
+ * @param {number|null} score
+ * @returns {'ok'|'miss'|'score'|'neutral'}
+ */
+function scoreTone(score) {
+  if (typeof score !== 'number' || !Number.isFinite(score)) return 'neutral';
+  if (score >= 70) return 'ok';
+  if (score < 50) return 'miss';
+  return 'score';
+}
+
+/**
+ * @param {import('pdfkit').PDFDocument} doc
  * @param {{ title: string, items: { lead: string, text: string }[] }} block
  * @param {number} x
  * @param {number} y
  * @param {number} width
+ * @param {string} accent
  * @returns {number} bottom Y
  */
-function renderBlockBox(doc, block, x, y, width) {
-  let cy = y;
-  doc.font('Helvetica-Bold').fontSize(11).fillColor('#111111').text(block.title, x, cy, { width });
-  cy += doc.heightOfString(block.title, { width }) + 8;
-
+function renderBlockBox(doc, block, x, y, width, accent) {
+  const pad = 10;
+  const headerH = 26;
+  let bodyH = 8;
   if (!block.items.length) {
-    doc.font('Helvetica').fontSize(9).fillColor('#888888').text('—', x, cy, { width });
-    cy += 14;
-    return cy;
+    bodyH += 16;
+  } else {
+    for (const item of block.items) {
+      const lead = String(item.lead || '').trim();
+      const text = String(item.text || '').trim();
+      if (lead) {
+        doc.font('Helvetica-Bold').fontSize(9);
+        bodyH += doc.heightOfString(`• ${lead}`, { width: width - pad * 2 }) + 2;
+      }
+      if (text) {
+        doc.font('Helvetica').fontSize(8.5);
+        bodyH += doc.heightOfString(text, { width: width - pad * 2 - 6 }) + 7;
+      } else {
+        bodyH += 4;
+      }
+    }
+  }
+  const boxH = headerH + bodyH + pad;
+
+  let boxY = ensureSpace(doc, y, boxH + 8);
+
+  doc.save();
+  doc.roundedRect(x, boxY, width, boxH, 6).fillAndStroke('#ffffff', COLORS.border);
+  doc.rect(x, boxY, 4, boxH).fill(accent);
+  doc.rect(x, boxY, width, headerH).fill(COLORS.soft);
+  doc.restore();
+
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(10)
+    .fillColor(COLORS.ink)
+    .text(block.title, x + pad + 2, boxY + 8, { width: width - pad * 2 - 2 });
+
+  let cy = boxY + headerH + 8;
+  if (!block.items.length) {
+    doc.font('Helvetica').fontSize(9).fillColor(COLORS.muted).text('—', x + pad, cy, { width: width - pad * 2 });
+    return boxY + boxH;
   }
 
   for (const item of block.items) {
-    cy = ensureSpace(doc, cy, 40);
-
     const lead = String(item.lead || '').trim();
     const text = String(item.text || '').trim();
     if (lead) {
-      doc.font('Helvetica-Bold').fontSize(9.5).fillColor('#111111').text(`• ${lead}`, x, cy, { width });
-      cy += doc.heightOfString(`• ${lead}`, { width }) + 2;
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(COLORS.ink).text(`• ${lead}`, x + pad, cy, {
+        width: width - pad * 2,
+      });
+      cy += doc.heightOfString(`• ${lead}`, { width: width - pad * 2 }) + 2;
     }
     if (text) {
-      doc.font('Helvetica').fontSize(9).fillColor('#555555').text(text, x + 8, cy, { width: width - 8 });
-      cy += doc.heightOfString(text, { width: width - 8 }) + 6;
+      doc.font('Helvetica').fontSize(8.5).fillColor(COLORS.muted).text(text, x + pad + 6, cy, {
+        width: width - pad * 2 - 6,
+        lineGap: 1.5,
+      });
+      cy += doc.heightOfString(text, { width: width - pad * 2 - 6 }) + 7;
     } else {
       cy += 4;
     }
   }
 
-  return cy;
+  return boxY + boxH;
 }
 
 /**
- * Full-width framed Quick wins section.
+ * Full-width framed todos section.
  * @param {import('pdfkit').PDFDocument} doc
- * @param {{ lead: string, text: string }[]} wins
+ * @param {{ lead: string, text: string }[]} todos
  * @param {number} fullWidth
  * @param {number} leftX
  */
-function renderQuickWinsFrame(doc, wins, fullWidth, leftX) {
+function renderTodosFrame(doc, todos, fullWidth, leftX) {
   const padX = 14;
   const padBody = 12;
-  const headerH = 28;
+  const headerH = 30;
   const contentWidth = fullWidth - padX * 2;
-  const gapAfter = 14;
+  const gapAfter = 12;
 
-  const bodyH = measureQuickWinsBody(doc, wins, contentWidth);
+  const bodyH = measureTodosBody(doc, todos, contentWidth);
   const boxH = headerH + padBody + bodyH + padBody;
 
-  let boxY = ensureSpace(doc, doc.y + 6, boxH + gapAfter);
-
-  const border = '#d4d8e0';
-  const headerFill = '#fff1e8';
-  const accent = '#e07a3a';
+  let boxY = ensureSpace(doc, doc.y + 4, boxH + gapAfter);
 
   doc.save();
-  doc.lineWidth(1).strokeColor(border).fillColor(headerFill);
-  doc.rect(leftX, boxY, fullWidth, boxH).stroke();
-  doc.rect(leftX, boxY, fullWidth, headerH).fill();
+  doc.roundedRect(leftX, boxY, fullWidth, boxH, 7).fillAndStroke('#ffffff', COLORS.border);
+  doc.roundedRect(leftX, boxY, fullWidth, headerH, 7).fill(COLORS.accentSoft);
+  doc.rect(leftX, boxY + headerH - 7, fullWidth, 7).fill(COLORS.accentSoft);
   doc.restore();
 
-  doc.lineWidth(1).strokeColor(border);
-  doc.moveTo(leftX, boxY + headerH).lineTo(leftX + fullWidth, boxY + headerH).stroke();
+  doc
+    .moveTo(leftX, boxY + headerH)
+    .lineTo(leftX + fullWidth, boxY + headerH)
+    .strokeColor(COLORS.border)
+    .lineWidth(1)
+    .stroke();
 
   doc
     .font('Helvetica-Bold')
     .fontSize(11)
-    .fillColor(accent)
-    .text('Quick wins', leftX + padX, boxY + 9, { width: contentWidth });
+    .fillColor(COLORS.accent)
+    .text(TODOS_TITLE, leftX + padX, boxY + 9, { width: contentWidth });
 
   let cy = boxY + headerH + padBody;
-  for (const win of wins) {
-    const lead = String(win.lead || '').trim();
-    const text = String(win.text || '').trim();
+  let index = 1;
+  for (const todo of todos) {
+    const needed = estimateTodoHeight(doc, todo, contentWidth);
+    cy = ensureSpace(doc, cy, needed + 8);
+    // If we jumped to a new page mid-box, continue as flowing text (no redraw of frame).
+    const lead = String(todo.lead || '').trim();
+    const text = String(todo.text || '').trim();
+
     if (lead) {
-      doc.font('Helvetica-Bold').fontSize(10).fillColor('#111111').text(`• ${lead}`, leftX + padX, cy, {
-        width: contentWidth,
-        lineGap: 1,
-      });
-      cy += doc.heightOfString(`• ${lead}`, { width: contentWidth }) + 3;
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(10)
+        .fillColor(COLORS.ink)
+        .text(`${index}. ${lead}`, leftX + padX, cy, { width: contentWidth, lineGap: 1 });
+      cy += doc.heightOfString(`${index}. ${lead}`, { width: contentWidth }) + 3;
     }
     if (text) {
-      doc.font('Helvetica').fontSize(9.5).fillColor('#444444').text(text, leftX + padX + 6, cy, {
-        width: contentWidth - 6,
-        lineGap: 2,
-      });
-      cy += doc.heightOfString(text, { width: contentWidth - 6 }) + 8;
+      doc
+        .font('Helvetica')
+        .fontSize(9.5)
+        .fillColor('#444444')
+        .text(text, leftX + padX + 14, cy, { width: contentWidth - 14, lineGap: 2 });
+      cy += doc.heightOfString(text, { width: contentWidth - 14 }) + 10;
     } else {
-      cy += 4;
+      cy += 6;
     }
+    index += 1;
   }
 
   doc.y = Math.max(cy, boxY + boxH) + gapAfter;
@@ -194,24 +342,38 @@ function renderQuickWinsFrame(doc, wins, fullWidth, leftX) {
 
 /**
  * @param {import('pdfkit').PDFDocument} doc
- * @param {{ lead: string, text: string }[]} wins
+ * @param {{ lead: string, text: string }[]} todos
  * @param {number} contentWidth
  */
-function measureQuickWinsBody(doc, wins, contentWidth) {
+function measureTodosBody(doc, todos, contentWidth) {
   let h = 0;
-  for (const win of wins) {
-    const lead = String(win.lead || '').trim();
-    const text = String(win.text || '').trim();
-    if (lead) {
-      doc.font('Helvetica-Bold').fontSize(10);
-      h += doc.heightOfString(`• ${lead}`, { width: contentWidth }) + 3;
-    }
-    if (text) {
-      doc.font('Helvetica').fontSize(9.5);
-      h += doc.heightOfString(text, { width: contentWidth - 6 }) + 8;
-    } else {
-      h += 4;
-    }
+  let index = 1;
+  for (const todo of todos) {
+    h += estimateTodoHeight(doc, todo, contentWidth, index);
+    index += 1;
+  }
+  return h;
+}
+
+/**
+ * @param {import('pdfkit').PDFDocument} doc
+ * @param {{ lead: string, text: string }} todo
+ * @param {number} contentWidth
+ * @param {number} [index]
+ */
+function estimateTodoHeight(doc, todo, contentWidth, index = 1) {
+  let h = 0;
+  const lead = String(todo.lead || '').trim();
+  const text = String(todo.text || '').trim();
+  if (lead) {
+    doc.font('Helvetica-Bold').fontSize(10);
+    h += doc.heightOfString(`${index}. ${lead}`, { width: contentWidth }) + 3;
+  }
+  if (text) {
+    doc.font('Helvetica').fontSize(9.5);
+    h += doc.heightOfString(text, { width: contentWidth - 14 }) + 10;
+  } else {
+    h += 6;
   }
   return h;
 }
@@ -271,10 +433,11 @@ export function companyNameForVerslag(startUrl, general) {
  * @param {object|null|undefined} general
  */
 export function verslagPdfFilename(startUrl, general) {
-  const base = companyNameForVerslag(startUrl, general)
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .slice(0, 40) || 'verslag';
+  const base =
+    companyNameForVerslag(startUrl, general)
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .slice(0, 40) || 'verslag';
   const stamp = new Date().toISOString().slice(0, 10);
   return `${base}-miniscan-${stamp}.pdf`;
 }

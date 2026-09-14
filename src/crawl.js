@@ -25,6 +25,12 @@ import {
  */
 
 /**
+ * @typedef {object} CrawlDiscovery
+ * @property {boolean} robotsFound
+ * @property {boolean} sitemapFound
+ */
+
+/**
  * @param {string} url
  * @param {number} timeoutMs
  * @returns {Promise<{ ok: boolean, status: number, text: string, contentType: string }>}
@@ -52,7 +58,7 @@ async function fetchText(url, timeoutMs) {
  * @param {URL} start
  * @param {string} robotsText
  * @param {number} timeoutMs
- * @returns {Promise<string[]>}
+ * @returns {Promise<{ urls: string[], found: boolean }>}
  */
 async function discoverFromSitemap(start, robotsText, timeoutMs) {
   /** @type {Set<string>} */
@@ -70,6 +76,7 @@ async function discoverFromSitemap(start, robotsText, timeoutMs) {
   /** @type {Set<string>} */
   const visitedSitemaps = new Set();
   const queue = [...candidates];
+  let found = false;
 
   while (queue.length && pageUrls.size < 500) {
     const smUrl = queue.shift();
@@ -79,6 +86,7 @@ async function discoverFromSitemap(start, robotsText, timeoutMs) {
       const res = await fetchText(smUrl, timeoutMs);
       if (!res.ok) continue;
       const locs = [...res.text.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) => m[1].trim());
+      if (locs.length) found = true;
       for (const loc of locs) {
         if (/sitemap/i.test(loc) && /\.xml(\?|$)/i.test(loc)) {
           queue.push(loc);
@@ -97,7 +105,7 @@ async function discoverFromSitemap(start, robotsText, timeoutMs) {
       /* skip broken sitemap */
     }
   }
-  return [...pageUrls];
+  return { urls: [...pageUrls], found };
 }
 
 /**
@@ -122,7 +130,7 @@ export function extractLinks(html, pageUrl, start) {
  * Bounded site crawl: sitemap first, then BFS fill.
  * @param {string} startInput
  * @param {CrawlOptions} [options]
- * @returns {Promise<CrawledPage[]>}
+ * @returns {Promise<{ pages: CrawledPage[], discovery: CrawlDiscovery }>}
  */
 export async function crawlSite(startInput, options = {}) {
   const maxPages = options.maxPages ?? 50;
@@ -134,14 +142,16 @@ export async function crawlSite(startInput, options = {}) {
   const start = normalizeStartUrl(startInput);
   /** @type {string} */
   let robotsText = '';
-  if (respectRobots) {
-    try {
-      const robotsUrl = new URL('/robots.txt', start.origin).href;
-      const res = await fetchText(robotsUrl, timeoutMs);
-      if (res.ok) robotsText = res.text;
-    } catch {
-      /* soft-fail */
+  let robotsFound = false;
+  try {
+    const robotsUrl = new URL('/robots.txt', start.origin).href;
+    const res = await fetchText(robotsUrl, timeoutMs);
+    if (res.ok) {
+      robotsText = res.text;
+      robotsFound = Boolean(String(res.text || '').trim());
     }
+  } catch {
+    /* soft-fail */
   }
 
   const allowed = (urlStr) => {
@@ -154,11 +164,16 @@ export async function crawlSite(startInput, options = {}) {
   };
 
   onProgress('Discovering URLs from sitemap…');
+  /** @type {string[]} */
   let discovered = [];
+  let sitemapFound = false;
   try {
-    discovered = await discoverFromSitemap(start, robotsText, timeoutMs);
+    const sitemap = await discoverFromSitemap(start, robotsText, timeoutMs);
+    discovered = sitemap.urls;
+    sitemapFound = sitemap.found;
   } catch {
     discovered = [];
+    sitemapFound = false;
   }
 
   /** @type {string[]} */
@@ -241,5 +256,8 @@ export async function crawlSite(startInput, options = {}) {
   const workers = Array.from({ length: Math.min(concurrency, maxPages) }, () => worker());
   await Promise.all(workers);
 
-  return pages.slice(0, maxPages);
+  return {
+    pages: pages.slice(0, maxPages),
+    discovery: { robotsFound, sitemapFound },
+  };
 }

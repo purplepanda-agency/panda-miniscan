@@ -255,7 +255,7 @@ function normalizeQuickWinsList(value) {
     const text = String(obj.detail || obj.text || obj.explanation || '').trim();
     if (!lead && !text) continue;
     out.push({ lead: lead || text.slice(0, 50), text: text || '' });
-    if (out.length >= 5) break;
+    if (out.length >= 8) break;
   }
   return out;
 }
@@ -316,7 +316,11 @@ export function normalizeClientVerslag(value) {
   const blocks = Array.isArray(obj.blocks)
     ? normalizeBlocks(obj.blocks)
     : [];
-  const quickWins = Array.isArray(obj.quickWins) ? normalizeQuickWinsList(obj.quickWins) : [];
+  const quickWins = Array.isArray(obj.quickWins)
+    ? normalizeQuickWinsList(obj.quickWins)
+    : Array.isArray(obj.todos)
+      ? normalizeQuickWinsList(obj.todos)
+      : [];
   const ownFindings = Array.isArray(obj.ownFindings)
     ? normalizeItems(obj.ownFindings).slice(0, 5)
     : normalizeOwnFindings(obj.ownFindings, obj.notesSection);

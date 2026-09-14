@@ -187,7 +187,6 @@ export async function recheckGeneral(startUrl, options = {}) {
     pages,
     llms: options.llms,
     summary: options.summary,
-    model: options.model,
   });
 }
 

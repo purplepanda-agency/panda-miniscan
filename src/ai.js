@@ -62,13 +62,15 @@ export async function generateAiJson(opts) {
     return generateClaudeJson(opts);
   }
 
-  // Gemini: map tier=basic → GEMINI_MODEL_BASIC unless model already set
-  let model = typeof opts.model === 'string' && opts.model.trim() ? opts.model.trim() : '';
-  if (!model && opts.tier === 'basic') {
+  // Gemini: tier=basic (General) always uses the cheaper basic model — ignore UI override
+  let model = '';
+  if (opts.tier === 'basic') {
     model =
       String(process.env.GEMINI_MODEL_BASIC || '').trim() ||
       String(process.env.GEMINI_MODEL || '').trim() ||
       '';
+  } else if (typeof opts.model === 'string' && opts.model.trim()) {
+    model = opts.model.trim();
   }
   return generateGeminiJson({ ...opts, model: model || undefined });
 }

@@ -26,9 +26,11 @@ Beoordeel op drie niveaus (alleen waar de context dat toelaat):
 
 1. **Eigen merknaam** — herkenbare sitenaam, titels, consistentie
 2. **Niet-merkgebonden categorie- en attribuutzoektermen** (waar koopintentie zit) — categorie-/merkpagina's, product- en dienstcopy, on-page signalen
-3. **Lokaal** — “product/dienst plus stad/regio”, locatiepagina's, LocalBusiness-signalen
+3. **Lokaal** — “product/dienst plus stad/regio”, locatiepagina's, NAP/locatietekst op de site
 
 Neem ook **AI-gedreven vindbaarheid** mee (llms.txt, duidelijke merk- en aanbodstructuur voor machines) **alleen** als data in de context staat.
+
+**Verboden in dit blok:** JSON-LD, schema.org, structured data, rich results of markup-techniek. Die horen **niet** bij de vindbaarheidsvraag — laat ze weg, ook als ze in de input staan.
 
 Vergelijk **voorzichtig** met concurrenten **alleen** als General-intake of de site zelf concurrenten noemt — anders expliciet aangeven dat vergelijking niet mogelijk is met deze data.
 
@@ -59,7 +61,7 @@ Is er een **helder pad** dat een bezoeker omzet in een **online aankoop** én no
 
 Elke bevinding moet **specifiek en bruikbaar** zijn — niet generiek.
 
-1. **Veranker in evidence**: noem concrete pagina's, paden, titels, meta, schema-types, kanalen of citaten uit de context wanneer beschikbaar.
+1. **Veranker in evidence**: noem concrete pagina's, paden, titels, meta, kanalen of citaten uit de context wanneer beschikbaar. **Niet** JSON-LD/schema voor `visibility`.
 2. **Leg het mechanisme uit**: wat ziet de bezoeker/zoekende? Wat mist of botst? Wat is het **menselijke gevolg** voor de zaakvoerder (gemiste vragen, twijfel, afhakers)?
 3. **Vermijd clichés** zoals “verbeter de SEO”, “weinig content”, “zwakke CTA” zonder aan te tonen *waar* en *waarom dat ertoe doet* in deze snapshot.
 4. **`explanation` mag en moet langer**: typisch **3–6 zinnen** (of 1–2 korte alinea's). Geen harde limiet van twee zinnen. Schrijf diepgang, geen telegramstijl.

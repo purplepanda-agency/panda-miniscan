@@ -362,6 +362,7 @@ app.post('/api/recheck/client-verslag', async (req, res) => {
       url,
       companyName: companyNameForVerslag(url, general),
       generatedAt: clientVerslag.generatedAt,
+      signals: req.body?.signals ?? null,
     });
     res.json({
       clientVerslag,
@@ -391,6 +392,7 @@ app.post('/api/client-verslag/pdf', async (req, res) => {
       url,
       companyName: companyNameForVerslag(url, general),
       generatedAt: clientVerslag.generatedAt,
+      signals: req.body?.signals ?? null,
     });
     res.json({
       pdfBase64: pdfBuffer.toString('base64'),

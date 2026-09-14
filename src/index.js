@@ -7,6 +7,7 @@ import { runQuickscan } from './quickscan.js';
 import { runContentQuickscan } from './content-quickscan.js';
 import { runGeneral } from './general.js';
 import { detectChannels } from './channels.js';
+import { computeSiteSignals } from './site-signals.js';
 
 /**
  * @typedef {import('./crawl.js').CrawlOptions} CrawlOptions
@@ -26,12 +27,14 @@ export async function analyzeSite(url, options = {}) {
   const llmsPromise = analyzeLlmsTxt(url, { timeoutMs: options.timeoutMs });
 
   const pages = await crawlSite(url, options);
+  const crawledPages = pages.pages;
+  const discovery = pages.discovery;
   /** @type {import('./analyze.js').PageAnalysis[]} */
   const analyses = [];
   /** @type {Map<string, string>} */
   const htmlByUrl = new Map();
 
-  for (const page of pages) {
+  for (const page of crawledPages) {
     if (page.html) htmlByUrl.set(page.url, page.html);
     const extracted = page.html
       ? extractFromHtml(page.html, page.url)
@@ -110,7 +113,6 @@ export async function analyzeSite(url, options = {}) {
     pages: analyses,
     llms,
     summary,
-    model,
   };
 
   /** @type {import('./quickscan.js').QuickscanResult|null} */
@@ -124,12 +126,14 @@ export async function analyzeSite(url, options = {}) {
     ? null
     : runQuickscan({
         ...geminiInput,
+        model,
         pageHtmlByUrl: Object.fromEntries(htmlByUrl),
       });
   const runContentQs = options.skipContentQuickscan
     ? null
     : runContentQuickscan({
         ...geminiInput,
+        model,
         pageHtmlByUrl: Object.fromEntries(htmlByUrl),
       });
   const runGen = options.skipGeneral ? null : runGeneral(geminiInput);
@@ -149,12 +153,21 @@ export async function analyzeSite(url, options = {}) {
     general = genResult;
   }
 
+  const signals = computeSiteSignals({
+    pages: analyses,
+    summary,
+    llms,
+    homepageHtml: homeHtml,
+    discovery,
+  });
+
   return {
     startUrl: url,
     analyzedAt: new Date().toISOString(),
     audience,
     aiModel: model || null,
     summary,
+    signals,
     pages: analyses,
     llms,
     quickscan,

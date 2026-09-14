@@ -8,8 +8,7 @@ import { parseModelJson, isRateLimitError } from './gemini.js';
  * @param {'default'|'basic'} [tier]
  */
 function resolveClaudeModel(override, tier = 'default') {
-  const custom = typeof override === 'string' ? override.trim() : '';
-  if (custom) return custom;
+  // Basic-tier features (General) always use the cheaper model — ignore UI override
   if (tier === 'basic') {
     return (
       String(process.env.CLAUDE_MODEL_BASIC || '').trim() ||
@@ -17,6 +16,8 @@ function resolveClaudeModel(override, tier = 'default') {
       'claude-haiku-4-5'
     );
   }
+  const custom = typeof override === 'string' ? override.trim() : '';
+  if (custom) return custom;
   return String(process.env.CLAUDE_MODEL || '').trim() || 'claude-sonnet-4-5';
 }
 

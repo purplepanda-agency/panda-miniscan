@@ -74,7 +74,6 @@ export async function runGeneral(input) {
     temperature: 0.2,
     tier: 'basic',
     maxOutputTokens: 4096,
-    model: input.model,
   });
   if (!result.ok) {
     return {

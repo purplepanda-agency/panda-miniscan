@@ -64,6 +64,17 @@ function normalizeAiModel(raw) {
 }
 
 /**
+ * @returns {string}
+ */
+function storedAiModel() {
+  try {
+    return normalizeAiModel(localStorage.getItem(MODEL_STORAGE_KEY));
+  } catch {
+    return DEFAULT_AI_MODEL;
+  }
+}
+
+/**
  * @returns {HTMLSelectElement|null}
  */
 function modelSelectEl() {
@@ -74,41 +85,57 @@ function modelSelectEl() {
  * @returns {string}
  */
 function selectedAiModel() {
-  return normalizeAiModel(modelSelectEl()?.value);
+  return normalizeAiModel(modelSelectEl()?.value || storedAiModel());
 }
 
 /**
  * @param {string} model
  */
 function setSelectedAiModel(model) {
-  const select = modelSelectEl();
-  if (!select) return;
   const next = normalizeAiModel(model);
-  select.value = next;
   try {
     localStorage.setItem(MODEL_STORAGE_KEY, next);
   } catch {
     /* ignore */
   }
+  const select = modelSelectEl();
+  if (select) select.value = next;
 }
 
-function initModelSelect() {
+/**
+ * Model picker HTML for AI insights Generate row.
+ * @param {string} [selected]
+ */
+function renderAiModelSelect(selected) {
+  const current = normalizeAiModel(selected || storedAiModel());
+  const options = [
+    ['gemini-3.1-flash-lite', 'Gemini 3.1 Flash Lite'],
+    ['gemini-3.8-flash', 'Gemini 3.8 Flash'],
+    ['gemini-3.7-flash', 'Gemini 3.7 Flash'],
+    ['gemini-3.6-flash', 'Gemini 3.6 Flash'],
+    ['antigravity-preview-05-2026', 'Antigravity'],
+  ];
+  return `<label class="insights-model-field" title="AI model voor insights">
+    <span class="sr-only">AI model</span>
+    <select id="model" name="model" aria-label="AI model for insights">
+      ${options
+        .map(
+          ([id, label]) =>
+            `<option value="${escapeHtml(id)}"${id === current ? ' selected' : ''}>${escapeHtml(label)}</option>`
+        )
+        .join('')}
+    </select>
+  </label>`;
+}
+
+function bindInsightsModelSelect() {
   const select = modelSelectEl();
-  if (!select) return;
-  let stored = DEFAULT_AI_MODEL;
-  try {
-    stored = normalizeAiModel(localStorage.getItem(MODEL_STORAGE_KEY));
-  } catch {
-    /* ignore */
-  }
-  select.value = stored;
+  if (!select || select.dataset.bound === '1') return;
+  select.dataset.bound = '1';
   select.addEventListener('change', () => {
     setSelectedAiModel(select.value);
   });
 }
-
-initModelSelect();
-
 /**
  * @param {string} text
  */
@@ -266,11 +293,12 @@ function renderAnalysisSkeleton() {
       </section>
 
       <div class="results-section">
-        <div class="tabs skeleton-tabs">
-          <div class="skeleton-tab"></div>
-          <div class="skeleton-tab"></div>
-          <div class="skeleton-tab"></div>
-          <div class="skeleton-tab"></div>
+        <div class="tabs-bar">
+          <div class="tabs skeleton-tabs">
+            <div class="skeleton-tab"></div>
+            <div class="skeleton-tab"></div>
+            <div class="skeleton-tab"></div>
+          </div>
         </div>
         <div class="card skeleton-panel">
           <div class="skeleton-line skeleton-line--md" style="width:8rem;margin-bottom:1rem"></div>
@@ -467,7 +495,7 @@ function buildReportPayload(report) {
   const insights = normalizeInsights(report.insights);
   return {
     format: 'structa-report',
-    version: 8,
+    version: 9,
     startUrl: report.startUrl || '',
     analyzedAt: report.analyzedAt || new Date().toISOString(),
     audience: report.audience === 'tech' ? 'tech' : report.audience === 'business' ? 'business' : null,
@@ -478,6 +506,7 @@ function buildReportPayload(report) {
     contentQuickscan: report.contentQuickscan ?? null,
     channels: report.channels ?? null,
     general: report.general ?? null,
+    signals: report.signals ?? null,
     insights,
   };
 }
@@ -555,7 +584,7 @@ function normalizeClientVerslag(value) {
         })
         .filter(Boolean)
     : [];
-  const quickWins = normalizeVerslagLines(obj.quickWins).slice(0, 5);
+  const quickWins = normalizeVerslagLines(obj.quickWins ?? obj.todos).slice(0, 8);
   let ownFindings = [];
   if (Array.isArray(obj.ownFindings)) {
     ownFindings = normalizeVerslagLines(obj.ownFindings).slice(0, 5);
@@ -802,11 +831,18 @@ function verslagPdfDownloadName(report) {
   return `${safe}-miniscan-${new Date().toISOString().slice(0, 10)}.pdf`;
 }
 
+function hasGeneratedAiInsights(insights) {
+  const { aiInsights } = normalizeInsights(insights);
+  return Boolean(aiInsights.ok && aiInsights.cards.length);
+}
+
 function syncVerslagPdfMeta() {
   const meta = resultsEl.querySelector('[data-verslag-pdf-meta]');
   const redownload = resultsEl.querySelector('#insightsVerslagRedownload');
+  const verslagBtn = resultsEl.querySelector('#insightsVerslag');
   if (!lastReport) return;
   const { clientVerslag } = normalizeInsights(lastReport.insights);
+  const canMakePdf = hasGeneratedAiInsights(lastReport.insights);
   if (meta) {
     meta.textContent = clientVerslag.generatedAt
       ? `Laatste PDF: ${formatSavedNoteTime(clientVerslag.generatedAt)}`
@@ -815,6 +851,12 @@ function syncVerslagPdfMeta() {
   }
   if (redownload instanceof HTMLButtonElement) {
     redownload.hidden = !clientVerslag.ok;
+  }
+  if (verslagBtn instanceof HTMLButtonElement) {
+    verslagBtn.disabled = !canMakePdf;
+    verslagBtn.title = canMakePdf
+      ? 'Verslag PDF genereren'
+      : 'Genereer eerst AI insights';
   }
 }
 
@@ -833,6 +875,7 @@ function refreshAiInsightsUi() {
       : '';
     meta.hidden = !aiInsights.generatedAt;
   }
+  syncVerslagPdfMeta();
 }
 
 /**
@@ -2032,13 +2075,10 @@ function showReport(report, opts = {}) {
   if (lastAnalyzedUrl && urlInput.value.trim() !== lastAnalyzedUrl) {
     urlInput.value = lastAnalyzedUrl;
   }
-  const modelSelect = modelSelectEl();
-  const reportModel = report.aiModel || report.general?.model || report.quickscan?.model;
-  if (modelSelect && reportModel) {
-    setSelectedAiModel(String(reportModel));
-  }
   showView('workspace');
   renderReport(report);
+  const reportModel = normalizeInsights(report.insights).aiInsights?.model;
+  if (reportModel) setSelectedAiModel(String(reportModel));
   setCompanyTitle(companyTitleForReport(report));
   if (uiState) restoreUiState(uiState);
   if (opts.statusText) {
@@ -2056,14 +2096,13 @@ function showReport(report, opts = {}) {
 
 /**
  * @param {object|null|undefined} insights
+ * @param {object|null|undefined} [report]
  */
-function renderInsightsPanel(insights) {
-  const { savedNotes, aiInsights, clientVerslag } = normalizeInsights(insights);
+function renderInsightsPanel(insights, report = null) {
+  const { savedNotes, aiInsights } = normalizeInsights(insights);
+  const signals = resolveReportSignals(report || lastReport);
   const metaLabel = aiInsights.generatedAt
     ? `Generated ${formatSavedNoteTime(aiInsights.generatedAt)}${aiInsights.model ? ` · ${aiInsights.model}` : ''}`
-    : '';
-  const verslagMeta = clientVerslag.ok && clientVerslag.generatedAt
-    ? `Laatste PDF: ${formatSavedNoteTime(clientVerslag.generatedAt)}`
     : '';
   return `
     <div class="insights-page">
@@ -2071,12 +2110,16 @@ function renderInsightsPanel(insights) {
         <section class="card insights-col-ai">
           <div class="insights-ai-head">
             <h3 class="panel-title">AI insights</h3>
-            <button type="button" class="generate-btn" id="insightsGenerate">Generate</button>
+            <div class="insights-ai-actions">
+              ${renderAiModelSelect(aiInsights.model || storedAiModel())}
+              <button type="button" class="generate-btn" id="insightsGenerate">Generate</button>
+            </div>
           </div>
           <p class="ai-insights-meta muted" data-ai-insights-meta ${metaLabel ? '' : 'hidden'}>${escapeHtml(metaLabel)}</p>
           <div class="ai-insights-list" data-ai-insights-list>${renderAiInsightsList(aiInsights)}</div>
         </section>
         <aside class="insights-col-notes" aria-label="Eigen notities">
+          ${renderSignalsLabels(signals)}
           <div class="insights-notes-chat">
             <div class="insights-notes-chat-head">
               <h3 class="panel-title">Eigen notities</h3>
@@ -2102,15 +2145,116 @@ function renderInsightsPanel(insights) {
           </div>
         </aside>
       </div>
-      <div class="insights-verslag-footer">
-        <p class="ai-insights-meta muted insights-verslag-meta" data-verslag-pdf-meta ${verslagMeta ? '' : 'hidden'}>${escapeHtml(verslagMeta)}</p>
-        <div class="insights-verslag-actions">
-          <button type="button" class="btn-primary insights-verslag-btn" id="insightsVerslag">Verslag PDF</button>
-          <button type="button" class="ghost" id="insightsVerslagRedownload" ${clientVerslag.ok ? '' : 'hidden'}>PDF opnieuw</button>
-        </div>
-      </div>
     </div>
   `;
+}
+
+/**
+ * @typedef {{ metaScore: number|null, jsonLdScore: number|null, sitemap: boolean, tracking: boolean, robots: boolean, llms: boolean }} SiteSignalsView
+ */
+
+/**
+ * @param {object|null|undefined} report
+ * @returns {SiteSignalsView}
+ */
+function resolveReportSignals(report) {
+  if (report?.signals && typeof report.signals === 'object') {
+    const s = report.signals;
+    return {
+      metaScore: numberOrNull(s.metaScore),
+      jsonLdScore: numberOrNull(s.jsonLdScore),
+      sitemap: Boolean(s.sitemap),
+      tracking: Boolean(s.tracking),
+      robots: Boolean(s.robots),
+      llms: Boolean(s.llms),
+    };
+  }
+
+  const pages = Array.isArray(report?.pages) ? report.pages : [];
+  const metaScores = pages
+    .map((p) => scorePageMetaClient(p?.meta))
+    .filter((n) => typeof n === 'number');
+  const metaScore = metaScores.length
+    ? Math.round(metaScores.reduce((a, b) => a + b, 0) / metaScores.length)
+    : null;
+  const jsonLdScore = numberOrNull(report?.summary?.avgScore);
+  return {
+    metaScore,
+    jsonLdScore,
+    sitemap: false,
+    tracking: false,
+    robots: false,
+    llms: Boolean(report?.llms?.found),
+  };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number|null}
+ */
+function numberOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : null;
+}
+
+/**
+ * @param {object|null|undefined} meta
+ * @returns {number|null}
+ */
+function scorePageMetaClient(meta) {
+  if (!meta || typeof meta !== 'object') return null;
+  let earned = 0;
+  let possible = 0;
+  const check = (value, weight) => {
+    possible += weight;
+    if (String(value || '').trim()) earned += weight;
+  };
+  check(meta.title, 28);
+  check(meta.description, 28);
+  check(meta.canonical, 12);
+  check(meta.ogTitle || meta.title, 12);
+  check(meta.ogDescription || meta.description, 10);
+  check(meta.ogImage, 10);
+  if (!possible) return null;
+  return Math.round((earned / possible) * 100);
+}
+
+/**
+ * Compact value-only labels above notes.
+ * @param {SiteSignalsView} signals
+ */
+function renderSignalsLabels(signals) {
+  const score = (n) => (n == null ? '—' : String(n));
+  const yn = (v) => (v ? 'Ja' : 'Nee');
+  const items = [
+    { key: 'meta', label: 'Meta data score', value: score(signals.metaScore), tone: scoreToneClass(signals.metaScore) },
+    { key: 'sitemap', label: 'Sitemap aanwezig', value: yn(signals.sitemap), tone: signals.sitemap ? 'ok' : 'miss' },
+    { key: 'tracking', label: 'Tracking aanwezig', value: yn(signals.tracking), tone: signals.tracking ? 'ok' : 'miss' },
+    { key: 'robots', label: 'Robots aanwezig', value: yn(signals.robots), tone: signals.robots ? 'ok' : 'miss' },
+    { key: 'llms', label: 'llms.txt aanwezig', value: yn(signals.llms), tone: signals.llms ? 'ok' : 'miss' },
+    { key: 'jsonld', label: 'JSON-LD Score', value: score(signals.jsonLdScore), tone: scoreToneClass(signals.jsonLdScore) },
+  ];
+
+  return `<div class="signals-labels" aria-label="Site signalen">
+    ${items
+      .map(
+        (item) => `<div class="signals-label signals-label--${escapeHtml(item.tone)}" data-signal="${escapeHtml(item.key)}">
+      <span class="signals-label-name">${escapeHtml(item.label)}</span>
+      <span class="signals-label-value">${escapeHtml(item.value)}</span>
+    </div>`
+      )
+      .join('')}
+  </div>`;
+}
+
+/**
+ * @param {number|null} score
+ */
+function scoreToneClass(score) {
+  if (score == null) return 'empty';
+  if (score >= 70) return 'ok';
+  if (score < 50) return 'miss';
+  return 'mid';
 }
 
 /**
@@ -2256,6 +2400,11 @@ function renderReport(report) {
     : 'Current analysis';
   const startLabel = report.startUrl ? escapeHtml(String(report.startUrl)) : '';
   const nameLabel = escapeHtml(companyTitleForReport(report));
+  const { clientVerslag, aiInsights } = normalizeInsights(report.insights);
+  const verslagMeta = clientVerslag.ok && clientVerslag.generatedAt
+    ? `Laatste PDF: ${formatSavedNoteTime(clientVerslag.generatedAt)}`
+    : '';
+  const canMakePdf = Boolean(aiInsights.ok && aiInsights.cards.length);
 
   resultsEl.removeAttribute('aria-busy');
   resultsEl.innerHTML = `
@@ -2277,15 +2426,22 @@ function renderReport(report) {
       </div>
     </div>
     <div class="results-section">
-      <div class="tabs" role="tablist" aria-label="Analysis results">
-        <button type="button" class="tab is-active" role="tab" aria-selected="true" data-tab="general">General</button>
-        <button type="button" class="tab" role="tab" aria-selected="false" data-tab="channels">Channels</button>
-        <button type="button" class="tab" role="tab" aria-selected="false" data-tab="insights">Insights</button>
+      <div class="tabs-bar">
+        <div class="tabs" role="tablist" aria-label="Analysis results">
+          <button type="button" class="tab is-active" role="tab" aria-selected="true" data-tab="general">General</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-tab="channels">Channels</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-tab="insights">Insights</button>
+        </div>
+        <div class="tabs-actions">
+          <p class="muted tabs-verslag-meta" data-verslag-pdf-meta ${verslagMeta ? '' : 'hidden'}>${escapeHtml(verslagMeta)}</p>
+          <button type="button" class="ghost tabs-verslag-redownload" id="insightsVerslagRedownload" ${clientVerslag.ok ? '' : 'hidden'}>PDF opnieuw</button>
+          <button type="button" class="btn-primary insights-verslag-btn" id="insightsVerslag" ${canMakePdf ? '' : 'disabled'} title="${canMakePdf ? 'Verslag PDF genereren' : 'Genereer eerst AI insights'}">Verslag PDF</button>
+        </div>
       </div>
       <div class="tab-panels">
         <div class="tab-panel is-active" data-panel="general" role="tabpanel">${renderGeneralPanel(report.general, report.audience)}</div>
         <div class="tab-panel" data-panel="channels" role="tabpanel" hidden>${renderChannelsPanel(report.channels)}</div>
-        <div class="tab-panel" data-panel="insights" role="tabpanel" hidden>${renderInsightsPanel(report.insights)}</div>
+        <div class="tab-panel" data-panel="insights" role="tabpanel" hidden>${renderInsightsPanel(report.insights, report)}</div>
       </div>
     </div>
   `;
@@ -2366,6 +2522,7 @@ function renderReport(report) {
   bindViewAudienceControls();
   bindGeneralFieldEditors();
   bindInsightsGenerate();
+  bindInsightsModelSelect();
   bindInsightsVerslag();
   syncVerslagPdfMeta();
   void mountNotesEditor();
@@ -2688,6 +2845,10 @@ async function generateAiInsightsItem(btn) {
  */
 async function generateClientVerslagItem(btn) {
   if (!lastReport) return;
+  if (!hasGeneratedAiInsights(lastReport.insights)) {
+    setStatus('Genereer eerst AI insights voordat u een verslag maakt.');
+    return;
+  }
   const url = lastReport.startUrl || urlInput.value.trim();
   if (!url) {
     setStatus('Error: no site URL available for verslag');
@@ -2711,6 +2872,7 @@ async function generateClientVerslagItem(btn) {
         notesHtml: insights.notesHtml,
         savedNotes: insights.savedNotes,
         channels: lastReport.channels ?? null,
+        signals: resolveReportSignals(lastReport),
       }),
     });
     const data = await readApiJson(res);
@@ -2757,6 +2919,7 @@ async function redownloadClientVerslagPdf(btn) {
         url,
         general: lastReport.general ?? null,
         clientVerslag: insights.clientVerslag,
+        signals: resolveReportSignals(lastReport),
       }),
     });
     const data = await readApiJson(res);
@@ -3028,8 +3191,7 @@ document.getElementById('brandHome')?.addEventListener('click', (event) => {
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const url = urlInput.value.trim();
-  const maxPages = Number(/** @type {HTMLInputElement} */ (document.getElementById('maxPages')).value) || 50;
-  const model = selectedAiModel();
+  const maxPages = 50;
 
   submitBtn.disabled = true;
   clearResults();
@@ -3042,7 +3204,7 @@ form.addEventListener('submit', async (event) => {
     const res = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, maxPages, model }),
+      body: JSON.stringify({ url, maxPages }),
     });
     const data = await readApiJson(res);
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
