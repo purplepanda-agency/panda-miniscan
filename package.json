@@ -1,0 +1,36 @@
+{
+  "name": "jsonld-analyze",
+  "version": "1.0.0",
+  "description": "Lightweight JSON-LD site crawler and analyzer (CLI + local web UI)",
+  "type": "module",
+  "bin": {
+    "jsonld-analyze": "./bin/jsonld-analyze.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "analyze": "node bin/jsonld-analyze.js",
+    "build:notes": "esbuild src/frontend/tiptap-bundle.js --bundle --format=esm --outfile=public/vendor/tiptap.js --minify"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "json-ld",
+    "schema.org",
+    "seo",
+    "structured-data"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@tiptap/core": "2.26.1",
+    "@tiptap/extension-placeholder": "2.26.1",
+    "@tiptap/starter-kit": "2.26.1",
+    "chalk": "^5.4.1",
+    "cheerio": "^1.0.0",
+    "commander": "^13.1.0",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

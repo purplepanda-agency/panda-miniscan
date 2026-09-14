@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Structa — JSON-LD & llms.txt</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topnav">
+      <div class="topnav-inner">
+        <a href="/" class="brand" id="brandHome" aria-label="Back to start">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <strong>Structa</strong>
+        </a>
+        <span class="topnav-note">JSON-LD &amp; llms.txt checker</span>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section id="landing" class="landing">
+        <div class="hero">
+          <h1>Find structured data gaps on any site</h1>
+          <p class="lede">Enter a URL to crawl JSON-LD and check for an llms.txt file.</p>
+
+          <form id="form" class="search-bar">
+            <label class="sr-only" for="url">Website URL</label>
+            <input id="url" name="url" type="url" placeholder="https://example.com" required autocomplete="url" />
+            <label class="audience-field" title="Analysis perspective">
+              <span class="sr-only">Perspective</span>
+              <select id="audience" name="audience" aria-label="Analysis perspective">
+                <option value="business">Business developer</option>
+                <option value="tech">Tech expert</option>
+              </select>
+            </label>
+            <label class="pages-field" title="Max pages to crawl">
+              <span class="sr-only">Max pages</span>
+              <input id="maxPages" name="maxPages" type="number" min="1" max="100" value="50" aria-label="Max pages" />
+            </label>
+            <button type="submit" id="submit" class="search-btn" aria-label="Analyze">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2.2" />
+                <path d="M20 20l-3.2-3.2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+              </svg>
+            </button>
+          </form>
+        </div>
+
+        <section id="emptyState" class="empty-state">
+          <div
+            class="card empty-card"
+            id="reportDropzone"
+            tabindex="0"
+            role="button"
+            aria-label="Drop a Structa report file here, or use Open report"
+          >
+            <h2>Continue where you left off</h2>
+            <p>Open an analysis report from a local structa file or drop it here.</p>
+            <div class="empty-actions">
+              <label class="ghost file-label">
+                Open report
+                <input id="openReportEmpty" type="file" accept="application/json,.json" hidden />
+              </label>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section id="workspace" class="workspace" hidden>
+        <p id="status" class="status" hidden></p>
+        <section id="results" class="results"></section>
+      </section>
+    </main>
+
+    <script src="/app.js?v=59" type="module"></script>
+  </body>
+</html>

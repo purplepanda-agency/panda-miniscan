@@ -1,0 +1,323 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import express from 'express';
+import { loadEnv } from './env.js';
+import { analyzeSite } from './index.js';
+import { recheckPage, recheckLlms, confirmQuickscanItem, recheckGeneral, recheckQuickscan, recheckContentQuickscan, recheckChannels, recheckAiInsights } from './recheck.js';
+
+loadEnv();
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const publicDir = path.join(__dirname, '..', 'public');
+const PORT = Number(process.env.PORT) || 3847;
+
+const app = express();
+app.use(express.json({ limit: '512kb' }));
+app.use(express.static(publicDir));
+
+app.post('/api/analyze', async (req, res) => {
+  const url = req.body?.url;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include string "url"' });
+    return;
+  }
+
+  const maxPages = Math.min(100, Math.max(1, Number(req.body.maxPages) || 50));
+  const concurrency = Math.min(10, Math.max(1, Number(req.body.concurrency) || 5));
+  const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 10_000));
+  const respectRobots = req.body.respectRobots !== false;
+  const audience = req.body?.audience === 'tech' ? 'tech' : 'business';
+
+  try {
+    const report = await analyzeSite(url, {
+      maxPages,
+      concurrency,
+      timeoutMs,
+      respectRobots,
+      audience,
+      skipQuickscan: true,
+      skipContentQuickscan: true,
+      skipGeneral: false,
+    });
+    res.json(report);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/recheck/page', async (req, res) => {
+  const url = req.body?.url;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include string "url"' });
+    return;
+  }
+  const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 10_000));
+  try {
+    const page = await recheckPage(url, { timeoutMs });
+    res.json({ page });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/recheck/llms', async (req, res) => {
+  const url = req.body?.url;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include string "url"' });
+    return;
+  }
+  const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 10_000));
+  try {
+    const llms = await recheckLlms(url, { timeoutMs });
+    res.json({ llms });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/recheck/quickscan-item', async (req, res) => {
+  const siteUrl = req.body?.siteUrl;
+  const item = req.body?.item;
+  if (!siteUrl || typeof siteUrl !== 'string' || !item || typeof item !== 'string') {
+    res.status(400).json({ error: 'Body must include string "siteUrl" and "item"' });
+    return;
+  }
+  const kind = req.body?.kind === 'wins' ? 'wins' : 'issues';
+  const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 12_000));
+  try {
+    const result = await confirmQuickscanItem({ siteUrl, item, kind, timeoutMs });
+    if (!result.ok) {
+      res.status(502).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/recheck/general', async (req, res) => {
+  const url = req.body?.url;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include string "url"' });
+    return;
+  }
+  const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 12_000));
+  const audience = req.body?.audience === 'tech' ? 'tech' : 'business';
+  const pages = Array.isArray(req.body?.pages)
+    ? req.body.pages.slice(0, 25).map((p) => ({
+        url: p?.url,
+        score: p?.score,
+        types: p?.types || [],
+        meta: p?.meta
+          ? {
+              title: p.meta.title || '',
+              description: p.meta.description || '',
+              siteName: p.meta.siteName || '',
+            }
+          : undefined,
+        jsonLd: [],
+      }))
+    : [];
+  try {
+    const general = await recheckGeneral(url, {
+      timeoutMs,
+      pages,
+      summary: req.body?.summary,
+      audience,
+      llms: req.body?.llms
+        ? { found: Boolean(req.body.llms.found), score: req.body.llms.score }
+        : undefined,
+    });
+    res.json({ general });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/recheck/quickscan', async (req, res) => {
+  const url = req.body?.url;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include string "url"' });
+    return;
+  }
+  const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 12_000));
+  const audience = req.body?.audience === 'tech' ? 'tech' : 'business';
+  const pages = Array.isArray(req.body?.pages)
+    ? req.body.pages.slice(0, 25).map((p) => ({
+        url: p?.url,
+        score: p?.score,
+        types: p?.types || [],
+        meta: p?.meta
+          ? {
+              title: p.meta.title || '',
+              description: p.meta.description || '',
+              siteName: p.meta.siteName || '',
+            }
+          : undefined,
+        jsonLd: [],
+      }))
+    : [];
+  try {
+    const quickscan = await recheckQuickscan(url, {
+      timeoutMs,
+      pages,
+      summary: req.body?.summary,
+      audience,
+      llms: req.body?.llms
+        ? { found: Boolean(req.body.llms.found), score: req.body.llms.score }
+        : undefined,
+    });
+    res.json({ quickscan });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/recheck/content-quickscan', async (req, res) => {
+  const url = req.body?.url;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include string "url"' });
+    return;
+  }
+  const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 20_000));
+  const audience = req.body?.audience === 'tech' ? 'tech' : 'business';
+  const pages = Array.isArray(req.body?.pages)
+    ? req.body.pages.slice(0, 40).map((p) => ({
+        url: p?.url,
+        score: p?.score,
+        types: p?.types || [],
+        meta: p?.meta
+          ? {
+              title: p.meta.title || '',
+              description: p.meta.description || '',
+              siteName: p.meta.siteName || '',
+            }
+          : undefined,
+        jsonLd: [],
+      }))
+    : [];
+  try {
+    const contentQuickscan = await recheckContentQuickscan(url, {
+      timeoutMs,
+      pages,
+      summary: req.body?.summary,
+      audience,
+    });
+    res.json({ contentQuickscan });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/recheck/content-quickscan-item', async (req, res) => {
+  const siteUrl = req.body?.siteUrl;
+  const item = req.body?.item;
+  if (!siteUrl || typeof siteUrl !== 'string' || !item || typeof item !== 'string') {
+    res.status(400).json({ error: 'Body must include string "siteUrl" and "item"' });
+    return;
+  }
+  const kind = req.body?.kind === 'wins' ? 'wins' : 'issues';
+  const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 12_000));
+  try {
+    const result = await confirmQuickscanItem({ siteUrl, item, kind, timeoutMs });
+    if (!result.ok) {
+      res.status(502).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/recheck/channels', async (req, res) => {
+  const url = req.body?.url;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include string "url"' });
+    return;
+  }
+  const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 20_000));
+  const pages = Array.isArray(req.body?.pages)
+    ? req.body.pages.slice(0, 40).map((p) => ({
+        url: p?.url,
+        score: p?.score,
+        types: p?.types || [],
+        meta: p?.meta
+          ? {
+              title: p.meta.title || '',
+              description: p.meta.description || '',
+              siteName: p.meta.siteName || '',
+              canonical: p.meta.canonical || '',
+            }
+          : undefined,
+        jsonLd: Array.isArray(p?.jsonLd) ? p.jsonLd.slice(0, 5) : [],
+      }))
+    : [];
+  try {
+    const channels = await recheckChannels(url, { timeoutMs, pages });
+    res.json({ channels });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post('/api/recheck/ai-insights', async (req, res) => {
+  const url = req.body?.url;
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'Body must include string "url"' });
+    return;
+  }
+  const timeoutMs = Math.min(60_000, Math.max(1000, Number(req.body.timeoutMs) || 25_000));
+  const pages = Array.isArray(req.body?.pages)
+    ? req.body.pages.slice(0, 25).map((p) => ({
+        url: p?.url,
+        score: p?.score,
+        types: p?.types || [],
+        meta: p?.meta
+          ? {
+              title: p.meta.title || '',
+              description: p.meta.description || '',
+              siteName: p.meta.siteName || '',
+              ogTitle: p.meta.ogTitle || '',
+            }
+          : undefined,
+        jsonLd: Array.isArray(p?.jsonLd) ? p.jsonLd.slice(0, 5) : [],
+        issues: Array.isArray(p?.issues) ? p.issues.slice(0, 3) : [],
+        fetchError: p?.fetchError || null,
+      }))
+    : [];
+  try {
+    const aiInsights = await recheckAiInsights(url, {
+      timeoutMs,
+      pages,
+      summary: req.body?.summary,
+      llms: req.body?.llms
+        ? { found: Boolean(req.body.llms.found), score: req.body.llms.score }
+        : undefined,
+      general: req.body?.general ?? null,
+      channels: req.body?.channels ?? null,
+    });
+    res.json({ aiInsights });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`JSON-LD Analyzer UI → http://localhost:${PORT}`);
+});
