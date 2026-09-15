@@ -9,7 +9,12 @@
   "scripts": {
     "start": "node src/server.js",
     "analyze": "node bin/jsonld-analyze.js",
-    "build:notes": "esbuild src/frontend/tiptap-bundle.js --bundle --format=esm --outfile=public/vendor/tiptap.js --minify"
+    "build:notes": "esbuild src/frontend/tiptap-bundle.js --bundle --format=esm --outfile=public/vendor/tiptap.js --minify",
+    "embed:prompts": "node scripts/embed-prompts.mjs",
+    "predeploy": "npm run embed:prompts",
+    "dev:cf": "npm run embed:prompts && wrangler dev",
+    "deploy": "npm run embed:prompts && wrangler deploy",
+    "cf:typegen": "wrangler types"
   },
   "engines": {
     "node": ">=20"
@@ -28,10 +33,10 @@
     "chalk": "^5.4.1",
     "cheerio": "^1.0.0",
     "commander": "^13.1.0",
-    "express": "^4.21.2",
-    "pdfkit": "^0.20.2"
+    "express": "^4.21.2"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "wrangler": "^4.40.0"
   }
 }

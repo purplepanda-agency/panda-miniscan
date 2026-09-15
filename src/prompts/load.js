@@ -1,13 +1,9 @@
 /**
- * Load markdown prompt sources from this directory.
- * Use {{context}} in a prompt file to inject crawl/HTML context at call time.
+ * Load markdown prompt sources from the embedded bundle (Workers-safe).
+ * After editing `*.md`, run: npm run embed:prompts
  */
 
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const PROMPTS_DIR = dirname(fileURLToPath(import.meta.url));
+import { EMBEDDED_PROMPTS } from './embedded.js';
 
 /** @type {Map<string, string>} */
 const cache = new Map();
@@ -19,10 +15,13 @@ const cache = new Map();
 export function readPromptSource(name) {
   const file = name.endsWith('.md') ? name : `${name}.md`;
   let text = cache.get(file);
+  if (text != null) return text;
+
+  text = EMBEDDED_PROMPTS[file];
   if (text == null) {
-    text = readFileSync(join(PROMPTS_DIR, file), 'utf8').trim();
-    cache.set(file, text);
+    throw new Error(`Prompt not found: ${file}. Run npm run embed:prompts`);
   }
+  cache.set(file, text);
   return text;
 }
 

@@ -1,8 +1,8 @@
 # JSON-LD Site Analyzer
 
-Lightweight Node.js tool that crawls a website for JSON-LD structured data, scores what it finds, and suggests first-pass markup when pages have none. It also checks `/llms.txt` and runs a Gemini **Quickscan** for build/performance tips.
+Lightweight Node.js tool that crawls a website for JSON-LD structured data, scores what it finds, and suggests first-pass markup when pages have none. It also checks `/llms.txt` and runs AI insights / a printable client verslag.
 
-JSON-LD and llms.txt analysis work **without** an AI key. Quickscan needs `GEMINI_API_KEY`.
+JSON-LD and llms.txt analysis work **without** an AI key. General overview, insights and verslag need a Gemini (or Claude) API key.
 
 ## Requirements
 
@@ -37,7 +37,13 @@ GEMINI_API_KEY=your_key_here
 
 Set `AI_PROVIDER=claude` to use Anthropic, or `AI_PROVIDER=gemini` to go back. Gemini and Claude keys/models can both stay in `.env`.
 
-`GEMINI_MODEL` / `CLAUDE_MODEL` are used for Tech/Content Quickscan. `*_MODEL_BASIC` is used for the General company overview.
+`GEMINI_MODEL` / `CLAUDE_MODEL` are used for insights / quickscan. `*_MODEL_BASIC` is used for the General company overview.
+
+After editing prompt markdown under `src/prompts/`, regenerate the Workers-safe bundle:
+
+```bash
+npm run embed:prompts
+```
 
 ## CLI
 
@@ -47,13 +53,60 @@ npm run analyze -- https://example.com --max-pages 30 --json
 npm run analyze -- https://example.com --skip-quickscan
 ```
 
-## Web UI
+## Web UI (local)
 
 ```bash
 npm start
 ```
 
-Open [http://localhost:3847](http://localhost:3847). Results appear in **JSON-LD**, **llms.txt**, **Channels**, and on-demand Gemini tabs (Tech/Content Quickscan, General).
+Open [http://localhost:3847](http://localhost:3847).
+
+## Cloudflare Workers deploy
+
+This app deploys as a **Worker** (Express API via `nodejs_compat`) with **static assets** from `public/`.
+
+1. Install deps (includes Wrangler):
+
+```bash
+npm install
+```
+
+2. Login:
+
+```bash
+npx wrangler login
+```
+
+3. Local Cloudflare preview (uses `.dev.vars`):
+
+```bash
+cp .dev.vars.example .dev.vars
+# put GEMINI_API_KEY in .dev.vars
+npm run dev:cf
+```
+
+4. Set production secrets:
+
+```bash
+npx wrangler secret put GEMINI_API_KEY
+# optional:
+# npx wrangler secret put ANTHROPIC_API_KEY
+```
+
+5. Deploy:
+
+```bash
+npm run deploy
+```
+
+Wrangler prints a `*.workers.dev` URL. Point a custom domain in the Cloudflare dashboard if needed.
+
+### Notes
+
+- Long site crawls + AI generation need a **Workers Paid** plan (or high CPU limit). `wrangler.toml` sets `limits.cpu_ms = 300000`.
+- Non-secret defaults live under `[vars]` in `wrangler.toml`; secrets never go in git.
+- Prompt `.md` files are embedded into `src/prompts/embedded.js` on deploy (`predeploy` / `embed:prompts`).
+- The client verslag opens as a **print-ready HTML page** (browser print / “Save as PDF”).
 
 ## What it does
 
@@ -62,4 +115,4 @@ Open [http://localhost:3847](http://localhost:3847). Results appear in **JSON-LD
 3. Suggests markup when missing
 4. Fetches `/llms.txt`, scores it, or drafts a base file
 5. Detects public channels (socials, Google Business, shop, websites) from crawl links, JSON-LD `sameAs`, and meta — not a live social API
-6. Runs a Gemini quickscan for build/performance issues and quick wins
+6. Runs General intake + on-demand AI insights and a printable client verslag

@@ -792,43 +792,24 @@ function formatInsightExplanationHtml(text) {
 }
 
 /**
- * @param {string} base64
- * @param {string} filename
+ * Open printable verslag HTML in a new browser tab.
+ * @param {string} html
  */
-function downloadPdfBase64(base64, filename) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], { type: 'application/pdf' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename || 'verslag.pdf';
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(a.href);
-}
-
-/**
- * @param {object} report
- */
-function verslagPdfDownloadName(report) {
-  const general = report.general;
-  const fromGeneral =
-    general?.companyNameWebsite != null ? String(general.companyNameWebsite).split(/[—–\-|]/)[0].trim() : '';
-  let host = fromGeneral || 'verslag';
-  if (!fromGeneral) {
-    try {
-      const raw = String(report.startUrl || urlInput.value || '');
-      const u = new URL(raw.includes('://') ? raw : `https://${raw}`);
-      host = u.hostname.replace(/^www\./i, '');
-    } catch {
-      /* keep default */
-    }
+function openVerslagPrintPage(html) {
+  const win = window.open('', '_blank');
+  if (!win) {
+    setStatus('Kon geen nieuw tabblad openen — sta pop-ups toe voor deze site.');
+    return false;
   }
-  const safe = host.replace(/[^\w\s-]/g, '').replace(/\s+/g, '-') || 'verslag';
-  return `${safe}-miniscan-${new Date().toISOString().slice(0, 10)}.pdf`;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  try {
+    win.focus();
+  } catch {
+    /* ignore */
+  }
+  return true;
 }
 
 function hasGeneratedAiInsights(insights) {
@@ -845,7 +826,7 @@ function syncVerslagPdfMeta() {
   const canMakePdf = hasGeneratedAiInsights(lastReport.insights);
   if (meta) {
     meta.textContent = clientVerslag.generatedAt
-      ? `Laatste PDF: ${formatSavedNoteTime(clientVerslag.generatedAt)}`
+      ? `Laatste verslag: ${formatSavedNoteTime(clientVerslag.generatedAt)}`
       : '';
     meta.hidden = !clientVerslag.ok;
   }
@@ -855,7 +836,7 @@ function syncVerslagPdfMeta() {
   if (verslagBtn instanceof HTMLButtonElement) {
     verslagBtn.disabled = !canMakePdf;
     verslagBtn.title = canMakePdf
-      ? 'Verslag PDF genereren'
+      ? 'Verslag openen om af te drukken of op te slaan'
       : 'Genereer eerst AI insights';
   }
 }
@@ -2443,7 +2424,7 @@ function renderReport(report) {
   const nameLabel = escapeHtml(companyTitleForReport(report));
   const { clientVerslag, aiInsights } = normalizeInsights(report.insights);
   const verslagMeta = clientVerslag.ok && clientVerslag.generatedAt
-    ? `Laatste PDF: ${formatSavedNoteTime(clientVerslag.generatedAt)}`
+    ? `Laatste verslag: ${formatSavedNoteTime(clientVerslag.generatedAt)}`
     : '';
   const canMakePdf = Boolean(aiInsights.ok && aiInsights.cards.length);
 
@@ -2475,8 +2456,8 @@ function renderReport(report) {
         </div>
         <div class="tabs-actions">
           <p class="muted tabs-verslag-meta" data-verslag-pdf-meta ${verslagMeta ? '' : 'hidden'}>${escapeHtml(verslagMeta)}</p>
-          <button type="button" class="ghost tabs-verslag-redownload" id="insightsVerslagRedownload" ${clientVerslag.ok ? '' : 'hidden'}>PDF opnieuw</button>
-          <button type="button" class="btn-primary insights-verslag-btn" id="insightsVerslag" ${canMakePdf ? '' : 'disabled'} title="${canMakePdf ? 'Verslag PDF genereren' : 'Genereer eerst AI insights'}">Verslag PDF</button>
+          <button type="button" class="ghost tabs-verslag-redownload" id="insightsVerslagRedownload" ${clientVerslag.ok ? '' : 'hidden'}>Verslag opnieuw</button>
+          <button type="button" class="btn-primary insights-verslag-btn" id="insightsVerslag" ${canMakePdf ? '' : 'disabled'} title="${canMakePdf ? 'Verslag openen om af te drukken of op te slaan' : 'Genereer eerst AI insights'}">Verslag</button>
         </div>
       </div>
       <div class="tab-panels">
@@ -2926,11 +2907,11 @@ async function generateClientVerslagItem(btn) {
       ...insights,
       clientVerslag,
     };
-    if (data.pdfBase64) {
-      downloadPdfBase64(data.pdfBase64, data.filename || verslagPdfDownloadName(lastReport));
+    if (typeof data.html === 'string' && data.html.trim()) {
+      openVerslagPrintPage(data.html);
     }
     syncVerslagPdfMeta();
-    setStatus(clientVerslag.ok ? 'PDF verslag gedownload.' : `Verslag: ${clientVerslag.error || 'mislukt'}`);
+    setStatus(clientVerslag.ok ? 'Verslag geopend in nieuw tabblad.' : `Verslag: ${clientVerslag.error || 'mislukt'}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setStatus(`Error: ${message}`);
@@ -2947,13 +2928,13 @@ async function redownloadClientVerslagPdf(btn) {
   const url = lastReport.startUrl || urlInput.value.trim();
   const insights = normalizeInsights(lastReport.insights);
   if (!insights.clientVerslag.ok) {
-    setStatus('Nog geen opgeslagen verslag — gebruik Verslag PDF.');
+    setStatus('Nog geen opgeslagen verslag — gebruik Verslag.');
     return;
   }
 
-  setButtonBusy(btn, true, 'PDF…');
+  setButtonBusy(btn, true, 'Openen…');
   try {
-    const res = await fetch('/api/client-verslag/pdf', {
+    const res = await fetch('/api/client-verslag/print', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2965,10 +2946,10 @@ async function redownloadClientVerslagPdf(btn) {
     });
     const data = await readApiJson(res);
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    if (data.pdfBase64) {
-      downloadPdfBase64(data.pdfBase64, data.filename || verslagPdfDownloadName(lastReport));
+    if (typeof data.html === 'string' && data.html.trim()) {
+      openVerslagPrintPage(data.html);
     }
-    setStatus('PDF opnieuw gedownload.');
+    setStatus('Verslag opnieuw geopend.');
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setStatus(`Error: ${message}`);

@@ -3,3 +3,7 @@ node_modules/
 *.log
 .env
 .npm/
+.wrangler/
+.dev.vars
+.mf/
+dist/
