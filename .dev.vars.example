@@ -1,9 +1,0 @@
-# Local secrets for `wrangler dev` (copy to .dev.vars — gitignored)
-AI_PROVIDER=gemini
-GEMINI_API_KEY=
-# ANTHROPIC_API_KEY=
-# CLAUDE_MODEL=claude-sonnet-4-5
-# CLAUDE_MODEL_BASIC=claude-haiku-4-5
-GEMINI_MODEL=gemini-3.1-flash-lite
-GEMINI_MODEL_BASIC=gemini-3.1-flash-lite
-GEMINI_MODEL_FALLBACKS=none

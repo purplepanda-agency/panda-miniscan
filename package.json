@@ -38,5 +38,8 @@
   "devDependencies": {
     "esbuild": "^0.28.2",
     "wrangler": "^4.40.0"
+  },
+  "overrides": {
+    "iconv-lite": "0.6.3"
   }
 }
