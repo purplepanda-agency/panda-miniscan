@@ -914,7 +914,7 @@ function formatSavedNoteTime(iso) {
  */
 function renderSavedNotesList(savedNotes) {
   if (!savedNotes.length) {
-    return '<p class="muted saved-notes-empty">Nog geen notities — typ hieronder en sla op.</p>';
+    return '<p class="muted saved-notes-empty">Nog geen notities — typ hierboven en sla op.</p>';
   }
   return savedNotes
     .map(
@@ -2227,19 +2227,60 @@ function renderSignalsLabels(signals) {
   const score = (n) => (n == null ? '—' : String(n));
   const yn = (v) => (v ? 'Ja' : 'Nee');
   const items = [
-    { key: 'meta', label: 'Meta data score', value: score(signals.metaScore), tone: scoreToneClass(signals.metaScore) },
-    { key: 'sitemap', label: 'Sitemap aanwezig', value: yn(signals.sitemap), tone: signals.sitemap ? 'ok' : 'miss' },
-    { key: 'tracking', label: 'Tracking aanwezig', value: yn(signals.tracking), tone: signals.tracking ? 'ok' : 'miss' },
-    { key: 'robots', label: 'Robots aanwezig', value: yn(signals.robots), tone: signals.robots ? 'ok' : 'miss' },
-    { key: 'llms', label: 'llms.txt aanwezig', value: yn(signals.llms), tone: signals.llms ? 'ok' : 'miss' },
-    { key: 'jsonld', label: 'JSON-LD Score', value: score(signals.jsonLdScore), tone: scoreToneClass(signals.jsonLdScore) },
+    {
+      key: 'meta',
+      label: 'Meta data score',
+      value: score(signals.metaScore),
+      tone: scoreToneClass(signals.metaScore),
+      tip: 'Gemiddelde compleetheid van HTML-meta op de gecrawlde pagina’s: title (28), description (28), canonical (12), og:title (12), og:description (10), og:image (10). Alleen aanwezigheid, geen ranking.',
+    },
+    {
+      key: 'sitemap',
+      label: 'Sitemap aanwezig',
+      value: yn(signals.sitemap),
+      tone: signals.sitemap ? 'ok' : 'miss',
+      tip: 'Of er tijdens de crawl een bereikbare XML-sitemap is gevonden (via robots.txt of /sitemap.xml).',
+    },
+    {
+      key: 'tracking',
+      label: 'Tracking aanwezig',
+      value: yn(signals.tracking),
+      tone: signals.tracking ? 'ok' : 'miss',
+      tip: 'Of op de homepage bekende tracking-scripts zijn gedetecteerd (o.a. Google Analytics/GTM, Meta Pixel, Hotjar, Clarity).',
+    },
+    {
+      key: 'robots',
+      label: 'Robots aanwezig',
+      value: yn(signals.robots),
+      tone: signals.robots ? 'ok' : 'miss',
+      tip: 'Of /robots.txt bereikbaar is op de website.',
+    },
+    {
+      key: 'llms',
+      label: 'llms.txt aanwezig',
+      value: yn(signals.llms),
+      tone: signals.llms ? 'ok' : 'miss',
+      tip: 'Of /llms.txt aanwezig is — een bestand dat AI-agents helpt om de site te begrijpen.',
+    },
+    {
+      key: 'jsonld',
+      label: 'JSON-LD Score',
+      value: score(signals.jsonLdScore),
+      tone: scoreToneClass(signals.jsonLdScore),
+      tip: 'Gemiddelde JSON-LD-kwaliteitsscore (0–100) over de gecrawlde pagina’s: types, verplichte/aanbevolen velden en basisconsistentie met HTML-meta.',
+    },
   ];
 
   return `<div class="signals-labels" aria-label="Site signalen">
     ${items
       .map(
         (item) => `<div class="signals-label signals-label--${escapeHtml(item.tone)}" data-signal="${escapeHtml(item.key)}">
-      <span class="signals-label-name">${escapeHtml(item.label)}</span>
+      <span class="signals-label-head">
+        <span class="signals-label-name">${escapeHtml(item.label)}</span>
+        <button type="button" class="signals-info" aria-label="Info: ${escapeHtml(item.label)}" data-tip="${escapeHtml(item.tip)}">
+          <span aria-hidden="true">i</span>
+        </button>
+      </span>
       <span class="signals-label-value">${escapeHtml(item.value)}</span>
     </div>`
       )
