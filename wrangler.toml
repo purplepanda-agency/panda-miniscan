@@ -3,9 +3,10 @@ main = "src/worker.js"
 compatibility_date = "2026-09-15"
 compatibility_flags = ["nodejs_compat"]
 
-# Long crawls + AI + PDF need a higher CPU budget (Workers Paid).
-[limits]
-cpu_ms = 300000
+# CPU limits require Workers Paid. Free plan defaults to 10ms (or 30s with waitUntil).
+# Uncomment when on a paid plan for long crawls + AI + PDF:
+# [limits]
+# cpu_ms = 300000
 
 [assets]
 directory = "./public"
