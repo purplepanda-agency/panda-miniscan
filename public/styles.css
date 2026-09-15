@@ -1882,7 +1882,8 @@ html[data-theme="light"] .insights-model-field select {
 
 .insights-notes-composer {
   flex-shrink: 0;
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-top: 0;
   padding: 0.7rem 0.85rem 0.85rem;
   display: grid;
   gap: 0.5rem;

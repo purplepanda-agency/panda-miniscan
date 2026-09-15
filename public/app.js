@@ -2125,7 +2125,6 @@ function renderInsightsPanel(insights, report = null) {
               <h3 class="panel-title">Eigen notities</h3>
               <p class="muted insights-notes-chat-hint">Observaties tijdens het gesprek — éénrichtingsverkeer, niet meegenomen in AI insights</p>
             </div>
-            <div class="insights-notes-thread saved-notes-list" data-saved-notes-list>${renderSavedNotesList(savedNotes)}</div>
             <div class="insights-notes-composer">
               <div class="notes-toolbar" role="toolbar" aria-label="Notes formatting">
                 <button type="button" class="notes-tool" data-notes-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
@@ -2142,6 +2141,7 @@ function renderInsightsPanel(insights, report = null) {
                 <button type="button" class="notes-save-btn" id="notesSaveBtn" title="Save note">Opslaan</button>
               </div>
             </div>
+            <div class="insights-notes-thread saved-notes-list" data-saved-notes-list>${renderSavedNotesList(savedNotes)}</div>
           </div>
         </aside>
       </div>
