@@ -4,7 +4,7 @@ compatibility_date = "2026-09-15"
 compatibility_flags = ["nodejs_compat"]
 
 # CPU limits require Workers Paid. Free plan defaults to 10ms (or 30s with waitUntil).
-# Uncomment when on a paid plan for long crawls + AI + PDF:
+# Uncomment when on a paid plan for long crawls + AI + verslag:
 # [limits]
 # cpu_ms = 300000
 

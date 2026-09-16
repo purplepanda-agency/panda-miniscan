@@ -1,5 +1,5 @@
 /**
- * Compact site health signals for Insights labels + PDF.
+ * Compact site health signals for the Meta tab + printable verslag.
  */
 
 /**

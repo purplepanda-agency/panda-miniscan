@@ -2051,7 +2051,7 @@ function renderChannelsPanel(channels) {
         <h3 class="panel-title">Channels</h3>
         ${refreshBtn}
       </div>
-      <p class="muted">Presence detected from crawl links, JSON-LD <code>sameAs</code>, and meta — not a live social API.</p>
+      <p class="muted">Kanalen uit crawl-links, site-meta en structured data — geen live social API.</p>
       <div class="channels-groups">${body}</div>
     </div>`;
 }
@@ -2183,7 +2183,7 @@ function renderInsightsPanel(insights, report = null) {
       <section class="insights-notes-chat" aria-label="Eigen notities">
         <div class="insights-notes-chat-head">
           <h3 class="panel-title">Eigen notities</h3>
-          <p class="muted insights-notes-chat-hint">Observaties tijdens het gesprek — éénrichtingsverkeer, niet meegenomen in AI insights</p>
+          <p class="muted insights-notes-chat-hint">Observaties tijdens het gesprek — niet meegenomen in AI insights, wél als input voor het Verslag</p>
         </div>
         <div class="insights-notes-body">
           <div class="insights-notes-composer">

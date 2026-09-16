@@ -1,8 +1,10 @@
-# JSON-LD Site Analyzer
+# Structa (panda-miniscan)
 
-Lightweight Node.js tool that crawls a website for JSON-LD structured data, scores what it finds, and suggests first-pass markup when pages have none. It also checks `/llms.txt` and runs AI insights / a printable client verslag.
+Web tool that crawls a website and surfaces **General** intake, **Channels**, **Meta** signals, on-demand **AI insights**, and a printable **client verslag**.
 
-JSON-LD and llms.txt analysis work **without** an AI key. General overview, insights and verslag need a Gemini (or Claude) API key.
+Under the hood the crawl still extracts JSON-LD / `/llms.txt` (used for Meta scores and AI context). Those dedicated panels are hidden in the UI.
+
+General overview, insights and verslag need a Gemini (or Claude) API key. The crawl itself works without one.
 
 ## Requirements
 
@@ -37,7 +39,7 @@ GEMINI_API_KEY=your_key_here
 
 Set `AI_PROVIDER=claude` to use Anthropic, or `AI_PROVIDER=gemini` to go back. Gemini and Claude keys/models can both stay in `.env`.
 
-`GEMINI_MODEL` / `CLAUDE_MODEL` are used for insights / quickscan. `*_MODEL_BASIC` is used for the General company overview.
+`GEMINI_MODEL` / `CLAUDE_MODEL` are used for insights. `*_MODEL_BASIC` is used for the General company overview.
 
 After editing prompt markdown under `src/prompts/`, regenerate the Workers-safe bundle:
 
@@ -103,16 +105,15 @@ Wrangler prints a `*.workers.dev` URL. Point a custom domain in the Cloudflare d
 
 ### Notes
 
-- Long site crawls + AI generation need a **Workers Paid** plan (or high CPU limit). `wrangler.toml` sets `limits.cpu_ms = 300000`.
+- Long site crawls + AI generation need a **Workers Paid** plan (or high CPU limit). Uncomment `[limits]` / `cpu_ms` in `wrangler.toml` when on Paid.
 - Non-secret defaults live under `[vars]` in `wrangler.toml`; secrets never go in git.
 - Prompt `.md` files are embedded into `src/prompts/embedded.js` on deploy (`predeploy` / `embed:prompts`).
 - The client verslag opens as a **print-ready HTML page** (browser print / “Save as PDF”).
 
 ## What it does
 
-1. Discovers URLs via sitemap or same-origin BFS
-2. Extracts and scores JSON-LD
-3. Suggests markup when missing
-4. Fetches `/llms.txt`, scores it, or drafts a base file
-5. Detects public channels (socials, Google Business, shop, websites) from crawl links, JSON-LD `sameAs`, and meta — not a live social API
-6. Runs General intake + on-demand AI insights and a printable client verslag
+1. Discovers URLs via sitemap or same-origin BFS (fixed crawl budget in the UI)
+2. Builds General intake (company overview) from the crawl
+3. Detects public channels (socials, Google Business, shop, websites) from crawl links, meta, and structured data — not a live social API
+4. Computes Meta signals (meta score, sitemap, tracking, robots, llms.txt, JSON-LD score)
+5. Generates on-demand AI insights (editable) and a printable client verslag

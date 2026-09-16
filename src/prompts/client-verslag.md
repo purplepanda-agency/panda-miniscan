@@ -23,7 +23,7 @@ Schrijf in het **Nederlands**.
    - `conversion` — Conversie, online en naar de winkel  
    Per blok: **`items`** met max. 3 regels (`lead` + `text`), geformuleerd als **gemiste kans** (geen oplossingen). Baseer je op de insight-kaartjes; verzin geen nieuwe feiten.
 
-3. **`ownFindings`** — **vierde blok** (vaste titel in PDF: *Eigen bevindingen*), **boven** de to-do's:
+3. **`ownFindings`** — **vierde blok** (vaste titel in het printverslag: *Eigen bevindingen*), **boven** de to-do's:
    - `items`: max. **5** regels (`lead` + `text`) uit de **consultantnotities**, netjes geformuleerd.
    - Zelfde stijl als de andere blokken (scanbare `lead`, uitleg in `text`).
    - **Geen** nieuwe feiten ten opzichte van de notities.

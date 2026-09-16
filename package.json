@@ -1,7 +1,7 @@
 {
   "name": "jsonld-analyze",
   "version": "1.0.0",
-  "description": "Lightweight JSON-LD site crawler and analyzer (CLI + local web UI)",
+  "description": "Site crawl for channels, meta signals, AI insights and a printable client verslag",
   "type": "module",
   "bin": {
     "jsonld-analyze": "./bin/jsonld-analyze.js"
