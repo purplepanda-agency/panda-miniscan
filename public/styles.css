@@ -108,6 +108,7 @@ html[data-theme="light"] .topnav {
   display: flex;
   align-items: center;
   gap: 0.55rem;
+  min-width: 0;
   font-size: 1rem;
   color: inherit;
   text-decoration: none;
@@ -115,6 +116,58 @@ html[data-theme="light"] .topnav {
 
 .brand:hover {
   color: var(--nav-ink);
+  opacity: 0.92;
+}
+
+.brand-mark-img {
+  display: none;
+  height: 1.35rem;
+  width: auto;
+  flex-shrink: 0;
+}
+
+html:not([data-theme="light"]) .brand-mark-img--on-dark,
+html[data-theme="light"] .brand-mark-img--on-light {
+  display: block;
+}
+
+.brand-product {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.4rem;
+  min-width: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--nav-ink);
+}
+
+.brand-by {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--nav-ink) 58%, transparent);
+}
+
+@media (max-width: 520px) {
+  .brand-by {
+    display: none;
+  }
+}
+
+.hero-logo {
+  display: none;
+  height: clamp(1.75rem, 4vw, 2.35rem);
+  width: auto;
+  max-width: min(14rem, 70vw);
+  margin: 0 0 1.1rem;
+}
+
+html:not([data-theme="light"]) .hero-logo--on-dark,
+html[data-theme="light"] .hero-logo--on-light {
+  display: block;
 }
 
 .workspace .status {
@@ -176,14 +229,6 @@ html[data-theme="light"] .topnav {
 .generate-btn:disabled {
   opacity: 0.65;
   cursor: wait;
-}
-
-.brand-mark {
-  width: 1.15rem;
-  height: 1.15rem;
-  border-radius: 4px;
-  background: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 35%, transparent);
 }
 
 .topnav-actions {
