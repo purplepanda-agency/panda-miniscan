@@ -298,6 +298,7 @@ function renderAnalysisSkeleton() {
             <div class="skeleton-tab"></div>
             <div class="skeleton-tab"></div>
             <div class="skeleton-tab"></div>
+            <div class="skeleton-tab"></div>
           </div>
         </div>
         <div class="card skeleton-panel">
@@ -729,9 +730,6 @@ function renderAiInsightsList(aiInsights) {
   if (!aiInsights.ok && aiInsights.error) {
     return `<div class="issues-box"><strong>Generation failed</strong><p class="muted" style="margin:0.4rem 0 0;color:inherit;">${escapeHtml(aiInsights.error)}</p></div>`;
   }
-  if (!aiInsights.cards.length) {
-    return '<p class="muted ai-insights-empty">Klik op Generate voor een eerste analyse.</p>';
-  }
 
   /** @type {Record<string, AiInsightCard[]>} */
   const grouped = { visibility: [], presence_trust: [], conversion: [] };
@@ -740,24 +738,31 @@ function renderAiInsightsList(aiInsights) {
     if (key && grouped[key]) grouped[key].push(card);
   }
 
-  return `<div class="ai-insights-blocks">${AI_INSIGHT_BLOCK_ORDER.map((blockKey) => {
-    const cards = grouped[blockKey] || [];
-    if (!cards.length) return '';
-    return renderAiInsightBlock(blockKey, cards);
-  }).join('')}</div>`;
+  const generated = Boolean(aiInsights.ok && aiInsights.cards.length);
+
+  const emptyHint = !generated
+    ? '<p class="muted ai-insights-empty">Klik op Generate voor een eerste analyse.</p>'
+    : '';
+
+  return `${emptyHint}<div class="ai-insights-blocks">${AI_INSIGHT_BLOCK_ORDER.map((blockKey) =>
+    renderAiInsightBlock(blockKey, grouped[blockKey] || [], { generated })
+  ).join('')}</div>`;
 }
 
 /**
  * @param {'visibility'|'presence_trust'|'conversion'} blockKey
  * @param {AiInsightCard[]} cards
+ * @param {{ generated?: boolean }} [opts]
  */
-function renderAiInsightBlock(blockKey, cards) {
+function renderAiInsightBlock(blockKey, cards, opts = {}) {
   const label = AI_INSIGHT_CATEGORY_LABELS[blockKey] || blockKey;
   const items = cards.slice(0, 3);
-  const body =
-    items.length > 0
-      ? `<ul class="insight-block-findings">${items.map((c) => renderAiInsightFinding(c)).join('')}</ul>`
-      : `<p class="muted insight-block-empty">Geen onderbouwde bevindingen uit deze snapshot voor dit blok.</p>`;
+  let body = '';
+  if (items.length > 0) {
+    body = `<ul class="insight-block-findings">${items.map((c) => renderAiInsightFinding(c)).join('')}</ul>`;
+  } else if (opts.generated) {
+    body = `<p class="muted insight-block-empty">Geen onderbouwde bevindingen uit deze snapshot voor dit blok.</p>`;
+  }
   return `<section class="insight-block insight-block--${escapeHtml(blockKey)}" aria-labelledby="insight-block-${escapeHtml(blockKey)}">
       <div class="insight-block-header">
         <h4 class="insight-block-title" id="insight-block-${escapeHtml(blockKey)}">${escapeHtml(label)}</h4>
@@ -770,25 +775,16 @@ function renderAiInsightBlock(blockKey, cards) {
  * @param {AiInsightCard} card
  */
 function renderAiInsightFinding(card) {
-  const lead = card.finding ? `<span class="insight-finding-point">${escapeHtml(card.finding)}</span>` : '';
-  const detail = formatInsightExplanationHtml(card.explanation);
-  return `<li class="insight-finding" data-insight-id="${escapeHtml(card.id)}">${lead}${detail}</li>`;
-}
-
-/**
- * @param {string|null|undefined} text
- */
-function formatInsightExplanationHtml(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return '';
-  const parts = raw
-    .split(/\n{2,}|\n/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-  if (!parts.length) return '';
-  return parts
-    .map((p) => `<p class="insight-finding-explanation">${escapeHtml(p)}</p>`)
-    .join('');
+  const id = escapeHtml(card.id);
+  return `<li class="insight-finding insight-finding--editable" data-insight-id="${id}">
+    <div class="insight-finding-toolbar">
+      <button type="button" class="insight-finding-delete" data-insight-delete title="Bevinding verwijderen" aria-label="Bevinding verwijderen">Verwijderen</button>
+    </div>
+    <label class="sr-only" for="insight-finding-${id}">Kernbevinding</label>
+    <textarea id="insight-finding-${id}" class="insight-finding-point-input" data-insight-field="finding" rows="2" placeholder="Kernbevinding…">${escapeHtml(card.finding)}</textarea>
+    <label class="sr-only" for="insight-expl-${id}">Uitleg</label>
+    <textarea id="insight-expl-${id}" class="insight-finding-explanation-input" data-insight-field="explanation" rows="4" placeholder="Uitleg…">${escapeHtml(card.explanation)}</textarea>
+  </li>`;
 }
 
 /**
@@ -849,6 +845,7 @@ function refreshAiInsightsUi() {
   if (!list || !lastReport) return;
   const { aiInsights } = normalizeInsights(lastReport.insights);
   list.innerHTML = renderAiInsightsList(aiInsights);
+  bindAiInsightsEditors();
   const meta = resultsEl.querySelector('[data-ai-insights-meta]');
   if (meta) {
     meta.textContent = aiInsights.generatedAt
@@ -857,6 +854,76 @@ function refreshAiInsightsUi() {
     meta.hidden = !aiInsights.generatedAt;
   }
   syncVerslagPdfMeta();
+}
+
+/**
+ * Persist editable AI insight fields / deletes into lastReport.
+ */
+function bindAiInsightsEditors() {
+  const list = resultsEl.querySelector('[data-ai-insights-list]');
+  if (!list) return;
+
+  list.querySelectorAll('[data-insight-field]').forEach((node) => {
+    const el = /** @type {HTMLTextAreaElement} */ (node);
+    const sync = () => {
+      const row = el.closest('[data-insight-id]');
+      const id = row?.getAttribute('data-insight-id');
+      const field = el.getAttribute('data-insight-field');
+      if (!id || (field !== 'finding' && field !== 'explanation')) return;
+      updateAiInsightCardField(id, field, el.value);
+    };
+    el.addEventListener('input', sync);
+    el.addEventListener('change', sync);
+  });
+
+  list.querySelectorAll('[data-insight-delete]').forEach((node) => {
+    const btn = /** @type {HTMLButtonElement} */ (node);
+    btn.addEventListener('click', () => {
+      const row = btn.closest('[data-insight-id]');
+      const id = row?.getAttribute('data-insight-id');
+      if (id) deleteAiInsightCard(id);
+    });
+  });
+}
+
+/**
+ * @param {string} id
+ * @param {'finding'|'explanation'} field
+ * @param {string} value
+ */
+function updateAiInsightCardField(id, field, value) {
+  if (!lastReport) return;
+  const insights = normalizeInsights(lastReport.insights);
+  const cards = insights.aiInsights.cards.map((card) =>
+    card.id === id ? { ...card, [field]: String(value) } : card
+  );
+  lastReport.insights = {
+    ...insights,
+    aiInsights: {
+      ...insights.aiInsights,
+      cards,
+      ok: cards.length > 0,
+    },
+  };
+}
+
+/**
+ * @param {string} id
+ */
+function deleteAiInsightCard(id) {
+  if (!lastReport) return;
+  const insights = normalizeInsights(lastReport.insights);
+  const cards = insights.aiInsights.cards.filter((card) => card.id !== id);
+  lastReport.insights = {
+    ...insights,
+    aiInsights: {
+      ...insights.aiInsights,
+      cards,
+      ok: cards.length > 0,
+    },
+  };
+  refreshAiInsightsUi();
+  setStatus(cards.length ? 'Bevinding verwijderd.' : 'Alle bevindingen verwijderd — genereer opnieuw indien nodig.', false);
 }
 
 /**
@@ -2076,56 +2143,68 @@ function showReport(report, opts = {}) {
 }
 
 /**
+ * @param {object|null|undefined} [report]
+ */
+function renderMetaPanel(report = null) {
+  const signals = resolveReportSignals(report || lastReport);
+  return `
+    <div class="meta-page">
+      <section class="card meta-panel">
+        <h3 class="panel-title">Meta &amp; signalen</h3>
+        <p class="muted meta-panel-hint">Technische presence-signalen uit de crawl — geen ranking of externe SEO-score.</p>
+        ${renderSignalsLabels(signals)}
+      </section>
+    </div>
+  `;
+}
+
+/**
  * @param {object|null|undefined} insights
  * @param {object|null|undefined} [report]
  */
 function renderInsightsPanel(insights, report = null) {
   const { savedNotes, aiInsights } = normalizeInsights(insights);
-  const signals = resolveReportSignals(report || lastReport);
   const metaLabel = aiInsights.generatedAt
     ? `Generated ${formatSavedNoteTime(aiInsights.generatedAt)}${aiInsights.model ? ` · ${aiInsights.model}` : ''}`
     : '';
   return `
     <div class="insights-page">
-      <div class="insights-split">
-        <section class="card insights-col-ai">
-          <div class="insights-ai-head">
-            <h3 class="panel-title">AI insights</h3>
-            <div class="insights-ai-actions">
-              ${renderAiModelSelect(aiInsights.model || storedAiModel())}
-              <button type="button" class="generate-btn" id="insightsGenerate">Generate</button>
+      <section class="card insights-col-ai">
+        <div class="insights-ai-head">
+          <h3 class="panel-title">AI insights</h3>
+          <div class="insights-ai-actions">
+            ${renderAiModelSelect(aiInsights.model || storedAiModel())}
+            <button type="button" class="generate-btn" id="insightsGenerate">Generate</button>
+          </div>
+        </div>
+        <p class="ai-insights-meta muted" data-ai-insights-meta ${metaLabel ? '' : 'hidden'}>${escapeHtml(metaLabel)}</p>
+        <div class="ai-insights-list" data-ai-insights-list>${renderAiInsightsList(aiInsights)}</div>
+      </section>
+      <section class="insights-notes-chat" aria-label="Eigen notities">
+        <div class="insights-notes-chat-head">
+          <h3 class="panel-title">Eigen notities</h3>
+          <p class="muted insights-notes-chat-hint">Observaties tijdens het gesprek — éénrichtingsverkeer, niet meegenomen in AI insights</p>
+        </div>
+        <div class="insights-notes-body">
+          <div class="insights-notes-composer">
+            <div class="notes-toolbar" role="toolbar" aria-label="Notes formatting">
+              <button type="button" class="notes-tool" data-notes-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
+              <button type="button" class="notes-tool" data-notes-cmd="italic" title="Italic" aria-label="Italic"><em>I</em></button>
+              <span class="notes-tool-sep" aria-hidden="true"></span>
+              <button type="button" class="notes-tool" data-notes-cmd="heading" title="Heading" aria-label="Heading">H</button>
+              <button type="button" class="notes-tool" data-notes-cmd="bulletList" title="Bullet list" aria-label="Bullet list">••</button>
+              <button type="button" class="notes-tool" data-notes-cmd="orderedList" title="Numbered list" aria-label="Numbered list">1.</button>
+            </div>
+            <div class="notes-editor notes-editor--chat">
+              <div class="notes-editor-mount" data-notes-editor></div>
+            </div>
+            <div class="insights-notes-composer-actions">
+              <button type="button" class="notes-save-btn" id="notesSaveBtn" title="Save note">Opslaan</button>
             </div>
           </div>
-          <p class="ai-insights-meta muted" data-ai-insights-meta ${metaLabel ? '' : 'hidden'}>${escapeHtml(metaLabel)}</p>
-          <div class="ai-insights-list" data-ai-insights-list>${renderAiInsightsList(aiInsights)}</div>
-        </section>
-        <aside class="insights-col-notes" aria-label="Eigen notities">
-          ${renderSignalsLabels(signals)}
-          <div class="insights-notes-chat">
-            <div class="insights-notes-chat-head">
-              <h3 class="panel-title">Eigen notities</h3>
-              <p class="muted insights-notes-chat-hint">Observaties tijdens het gesprek — éénrichtingsverkeer, niet meegenomen in AI insights</p>
-            </div>
-            <div class="insights-notes-composer">
-              <div class="notes-toolbar" role="toolbar" aria-label="Notes formatting">
-                <button type="button" class="notes-tool" data-notes-cmd="bold" title="Bold" aria-label="Bold"><strong>B</strong></button>
-                <button type="button" class="notes-tool" data-notes-cmd="italic" title="Italic" aria-label="Italic"><em>I</em></button>
-                <span class="notes-tool-sep" aria-hidden="true"></span>
-                <button type="button" class="notes-tool" data-notes-cmd="heading" title="Heading" aria-label="Heading">H</button>
-                <button type="button" class="notes-tool" data-notes-cmd="bulletList" title="Bullet list" aria-label="Bullet list">••</button>
-                <button type="button" class="notes-tool" data-notes-cmd="orderedList" title="Numbered list" aria-label="Numbered list">1.</button>
-              </div>
-              <div class="notes-editor notes-editor--chat">
-                <div class="notes-editor-mount" data-notes-editor></div>
-              </div>
-              <div class="insights-notes-composer-actions">
-                <button type="button" class="notes-save-btn" id="notesSaveBtn" title="Save note">Opslaan</button>
-              </div>
-            </div>
-            <div class="insights-notes-thread saved-notes-list" data-saved-notes-list>${renderSavedNotesList(savedNotes)}</div>
-          </div>
-        </aside>
-      </div>
+          <div class="insights-notes-thread saved-notes-list" data-saved-notes-list>${renderSavedNotesList(savedNotes)}</div>
+        </div>
+      </section>
     </div>
   `;
 }
@@ -2201,7 +2280,7 @@ function scorePageMetaClient(meta) {
 }
 
 /**
- * Compact value-only labels above notes.
+ * Compact signal labels (Meta tab).
  * @param {SiteSignalsView} signals
  */
 function renderSignalsLabels(signals) {
@@ -2452,6 +2531,7 @@ function renderReport(report) {
         <div class="tabs" role="tablist" aria-label="Analysis results">
           <button type="button" class="tab is-active" role="tab" aria-selected="true" data-tab="general">General</button>
           <button type="button" class="tab" role="tab" aria-selected="false" data-tab="channels">Channels</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-tab="meta">Meta</button>
           <button type="button" class="tab" role="tab" aria-selected="false" data-tab="insights">Insights</button>
         </div>
         <div class="tabs-actions">
@@ -2463,6 +2543,7 @@ function renderReport(report) {
       <div class="tab-panels">
         <div class="tab-panel is-active" data-panel="general" role="tabpanel">${renderGeneralPanel(report.general, report.audience)}</div>
         <div class="tab-panel" data-panel="channels" role="tabpanel" hidden>${renderChannelsPanel(report.channels)}</div>
+        <div class="tab-panel" data-panel="meta" role="tabpanel" hidden>${renderMetaPanel(report)}</div>
         <div class="tab-panel" data-panel="insights" role="tabpanel" hidden>${renderInsightsPanel(report.insights, report)}</div>
       </div>
     </div>
@@ -2546,6 +2627,7 @@ function renderReport(report) {
   bindInsightsGenerate();
   bindInsightsModelSelect();
   bindInsightsVerslag();
+  bindAiInsightsEditors();
   syncVerslagPdfMeta();
   void mountNotesEditor();
 }
@@ -2878,6 +2960,11 @@ async function generateClientVerslagItem(btn) {
   }
 
   if (notesEditor) persistNotesHtml(notesEditor.getHTML());
+  // Flush any focused insight textarea before send.
+  const active = document.activeElement;
+  if (active instanceof HTMLTextAreaElement && active.matches('[data-insight-field]')) {
+    active.dispatchEvent(new Event('change'));
+  }
   const insights = normalizeInsights(lastReport.insights);
 
   setButtonBusy(btn, true, 'Bezig…');

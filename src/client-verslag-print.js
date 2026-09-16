@@ -58,7 +58,7 @@ export function buildClientVerslagHtml(verslag, meta = {}) {
     {
       title: OWN_FINDINGS_TITLE,
       items: verslag.ownFindings || [],
-      accent: '#9aa3b5',
+      accent: '#8b7cf0',
     },
   ];
 
@@ -76,7 +76,10 @@ export function buildClientVerslagHtml(verslag, meta = {}) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(headline)} — Miniscan verslag</title>
+  <title>${escapeHtml(headline)} — Purple Panda miniscan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
   <style>${printStyles()}</style>
 </head>
 <body>
@@ -89,7 +92,10 @@ export function buildClientVerslagHtml(verslag, meta = {}) {
 
   <main class="page">
     <header class="hero">
-      <div class="accent-bar" aria-hidden="true"></div>
+      <div class="brand-row">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <p class="brand-eyebrow">Purple Panda · Miniscan</p>
+      </div>
       <h1>${escapeHtml(headline)}</h1>
       ${url ? `<p class="meta-line">${escapeHtml(url)}</p>` : ''}
       ${when ? `<p class="meta-line">${escapeHtml(when)}</p>` : ''}
@@ -115,6 +121,10 @@ export function buildClientVerslagHtml(verslag, meta = {}) {
     ${stacked.map((block) => renderBlockHtml(block)).join('')}
 
     ${verslag.quickWins?.length ? renderTodosHtml(verslag.quickWins) : ''}
+
+    <footer class="page-foot">
+      <p>Purple Panda · Be proud, have fun.</p>
+    </footer>
   </main>
 </body>
 </html>`;
@@ -167,14 +177,17 @@ function renderTodosHtml(todos) {
 function printStyles() {
   return `
     :root {
-      --ink: #1a1f2c;
-      --muted: #5c6578;
-      --border: #d5dae5;
-      --soft: #f3f5f9;
-      --accent: #ff5a1f;
+      --brand: #6c5cdc;
+      --brand-soft: #7768de;
+      --ink: #1a1830;
+      --muted: #5d5a72;
+      --border: #d8d5e8;
+      --soft: #f4f3fc;
+      --soft-2: #ebe9f8;
+      --accent: #6c5cdc;
       --ok: #1f8f5f;
       --miss: #c23d3d;
-      --score: #2f6fed;
+      --score: #5546c4;
       --font: "DM Sans", "Segoe UI", sans-serif;
     }
     * { box-sizing: border-box; }
@@ -182,7 +195,9 @@ function printStyles() {
       margin: 0;
       font-family: var(--font);
       color: var(--ink);
-      background: #e8ecf2;
+      background:
+        radial-gradient(ellipse 70% 40% at 50% -8%, rgba(108, 92, 220, 0.16), transparent 55%),
+        #ebe9f4;
       line-height: 1.45;
     }
     .toolbar {
@@ -195,8 +210,9 @@ function printStyles() {
       justify-content: space-between;
       gap: 0.75rem 1rem;
       padding: 0.85rem 1.25rem;
-      background: #fff;
+      background: rgba(255, 255, 255, 0.94);
       border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(8px);
     }
     .toolbar p { margin: 0; color: var(--muted); font-size: 0.92rem; }
     .toolbar-actions { display: flex; gap: 0.5rem; }
@@ -204,35 +220,59 @@ function printStyles() {
       appearance: none;
       border: 0;
       border-radius: 8px;
-      background: var(--accent);
+      background: var(--brand);
       color: #fff;
       font: 600 0.9rem var(--font);
       padding: 0.55rem 0.95rem;
       cursor: pointer;
     }
-    .btn:hover { filter: brightness(1.05); }
+    .btn:hover { background: #5748c7; }
     .page {
       width: min(820px, calc(100% - 2rem));
       margin: 1.25rem auto 2.5rem;
-      padding: 2rem 2.1rem 2.4rem;
+      padding: 2rem 2.1rem 1.8rem;
       background: #fff;
       border: 1px solid var(--border);
-      border-radius: 12px;
-      box-shadow: 0 10px 30px rgba(26, 31, 44, 0.06);
+      border-radius: 14px;
+      box-shadow: 0 12px 36px rgba(26, 24, 48, 0.07);
+      position: relative;
+      overflow: hidden;
+    }
+    .page::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--brand), #9b8ef0 55%, var(--brand));
     }
     .hero { margin-bottom: 1.25rem; }
-    .accent-bar {
-      width: 100%;
-      height: 3px;
-      background: var(--accent);
-      border-radius: 999px;
-      margin-bottom: 0.85rem;
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.7rem;
+    }
+    .brand-mark {
+      width: 0.85rem;
+      height: 0.85rem;
+      border-radius: 3px;
+      background: var(--brand);
+      flex-shrink: 0;
+    }
+    .brand-eyebrow {
+      margin: 0;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--brand-soft);
     }
     h1 {
       margin: 0 0 0.35rem;
       font-size: 1.75rem;
       letter-spacing: -0.02em;
       line-height: 1.2;
+      color: var(--brand-soft);
     }
     .meta-line { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.88rem; }
     .signals {
@@ -284,9 +324,9 @@ function printStyles() {
     }
     .block h2 { border-left-color: var(--accent); }
     .todos h2 {
-      background: #fff1e8;
-      color: var(--accent);
-      border-left-color: var(--accent);
+      background: color-mix(in srgb, var(--brand) 12%, #fff);
+      color: var(--brand);
+      border-left-color: var(--brand);
     }
     .items, .todos ol {
       margin: 0;
@@ -303,9 +343,23 @@ function printStyles() {
       line-height: 1.5;
     }
     .empty { margin: 0; padding: 0.85rem 1rem; color: var(--muted); }
+    .page-foot {
+      margin-top: 1.4rem;
+      padding-top: 0.85rem;
+      border-top: 1px dashed color-mix(in srgb, var(--brand) 28%, var(--border));
+      text-align: center;
+    }
+    .page-foot p {
+      margin: 0;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: color-mix(in srgb, var(--brand) 55%, var(--muted));
+    }
     @media (max-width: 720px) {
       .signals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .page { padding: 1.25rem 1.1rem 1.6rem; }
+      .page { padding: 1.4rem 1.1rem 1.4rem; }
     }
     @media print {
       body { background: #fff; }
@@ -318,7 +372,12 @@ function printStyles() {
         border-radius: 0;
         box-shadow: none;
       }
+      .page::before { display: none; }
       .block, .todos, .signals { break-inside: avoid; page-break-inside: avoid; }
+      h1 { color: var(--brand); }
+      .todos h2 { background: #f0eefc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .signal { background: #f4f3fc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .block h2 { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
   `;
 }
